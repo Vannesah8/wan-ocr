@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Handwriting to Word</title>
+<style>
+:root{--bg:#faf8f4;--card:#fff;--ink:#1f2328;--mute:#6b7280;--line:#e4e0d8;--accent:#b4531f;--accent-ink:#fff;--warn:#fdf0d5;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17160f;--card:#201f17;--ink:#ece8dd;--mute:#9b978a;--line:#38362b;--accent:#e08a55;--accent-ink:#1a1308;--warn:#3a2f12;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#17160f;--card:#201f17;--ink:#ece8dd;--mute:#9b978a;--line:#38362b;--accent:#e08a55;--accent-ink:#1a1308;--warn:#3a2f12;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Georgia,"Times New Roman",serif}
+main{max-width:720px;margin:0 auto;padding:32px 18px 64px}
+h1{font-size:clamp(1.7rem,5vw,2.3rem);line-height:1.15;margin:0 0 8px;letter-spacing:-.01em}
+.lede{color:var(--mute);margin:0 0 24px}
+.drop{display:block;border:2px dashed var(--line);background:var(--card);border-radius:14px;padding:36px 18px;text-align:center;cursor:pointer;transition:border-color .15s}
+.drop:hover,.drop.over{border-color:var(--accent)}
+.drop strong{display:block;font-size:1.1rem}
+.drop span{color:var(--mute);font-size:.9rem}
+.drop input{display:none}
+button{font:inherit;font-weight:600;background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:11px 20px;cursor:pointer}
+button:disabled{opacity:.45;cursor:default}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0;align-items:center}
+.note{background:var(--warn);border-radius:10px;padding:10px 14px;margin:14px 0;font-size:.92rem}
+.status{color:var(--mute);font-size:.92rem;margin:8px 0;min-height:1.4em}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .3s}
+.page{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:14px 0}
+.page h3{margin:0 0 8px;font-size:.9rem;color:var(--mute);font-weight:600}
+textarea{width:100%;min-height:150px;resize:vertical;font:15px/1.55 Georgia,serif;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:8px;padding:10px}
+.fine{color:var(--mute);font-size:.82rem;margin-top:28px}
+input[type=text]{width:100%;font:inherit;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:8px;padding:9px 11px}
+#analysis h4{margin:18px 0 4px;font-size:1.05rem}
+#analysis p,#analysis ul{margin:4px 0}
+#analysis ul{padding-left:20px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <h1>Handwriting to Word</h1>
+  <p class="lede">Upload a photo, scan or PDF of handwritten pages. Claude reads them, you check the text, and you save a Word document.</p>
+
+  <div id="unavailable" class="note" hidden>This view can’t run the reader. Open the link in claude.ai while signed in and try again.</div>
+
+  <label class="drop" id="drop">
+    <strong>Choose files or drop them here</strong>
+    <span>JPG, PNG, WebP or PDF · up to 25 pages</span>
+    <input type="file" id="file" accept=".pdf,image/*" multiple>
+  </label>
+
+  <div class="row">
+    <button id="go" disabled>Read the text</button>
+    <span class="status" id="status"></span>
+  </div>
+  <div class="bar" id="barwrap" hidden><i id="bar"></i></div>
+
+  <div id="results"></div>
+
+  <div id="saverow" hidden>
+    <div class="row">
+      <button id="save">Save text as Word document</button>
+      <button class="ghost" id="reset">Start over</button>
+    </div>
+    <div class="page">
+      <h3>Analysis across all pages</h3>
+      <input type="text" id="focus" placeholder="Optional focus, e.g. decisions, expenses, deadlines">
+      <div class="row"><button id="analyze">Summarise and analyse</button></div>
+      <div id="analysis"></div>
+      <div class="row" id="saveanrow" hidden><button id="saveAn">Save analysis as Word document</button></div>
+    </div>
+  </div>
+
+  <p class="fine">Your pages and their text are sent to Claude to be read and analysed, and nothing is stored on this page. Handwriting is never read perfectly: words Claude can’t make out are marked [illegible], so check the text before you save.</p>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const MAX_PAGES = 25, MAX_SIDE = 1800;
+const PROMPT = "Transcribe all handwritten and printed text in this image exactly as written. " +
+  "Keep paragraph breaks as a blank line. Do not correct spelling, add commentary or use markdown. " +
+  "If a word cannot be read, write [illegible]. If there is no text, reply with exactly: [no text found]";
+let sample = null, downloads = null, files = [], baseName = "handwriting";
+
+if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+// ---------- capabilities ----------
+(async () => {
+  try {
+    sample = await window.claude.use("sample");
+    const lim = sample && await sample.limits();
+    if (!lim || !lim.images) sample = null;
+  } catch (e) { sample = null; }
+  try { downloads = await window.claude.use("downloads"); } catch (e) { downloads = null; }
+  if (!sample) { $("#unavailable").hidden = false; $("#go").disabled = true; }
+})();
+
+// ---------- file picking ----------
+function setFiles(list) {
+  files = [...list];
+  if (files.length) baseName = files[0].name.replace(/\.[^.]+$/, "") || "handwriting";
+  $("#status").textContent = files.length ? files.length + (files.length === 1 ? " file" : " files") + " ready" : "";
+  $("#go").disabled = !files.length || !sample;
+}
+$("#file").addEventListener("change", e => setFiles(e.target.files));
+const drop = $("#drop");
+["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => setFiles(e.dataTransfer.files));
+
+// ---------- turn files into page images ----------
+const toBlob = c => new Promise(r => c.toBlob(r, "image/jpeg", 0.9));
+function fill(c) { const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); return x; }
+
+async function* pagesOf(f) {
+  if (/\.pdf$/i.test(f.name) || f.type === "application/pdf") {
+    const pdf = await pdfjsLib.getDocument({ data: await f.arrayBuffer() }).promise;
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const pg = await pdf.getPage(i), v0 = pg.getViewport({ scale: 1 });
+      const vp = pg.getViewport({ scale: MAX_SIDE / Math.max(v0.width, v0.height) });
+      const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height;
+      await pg.render({ canvasContext: fill(c), viewport: vp }).promise;
+      yield { label: f.name + " – page " + i, blob: await toBlob(c) };
+    }
+  } else {
+    const bmp = await createImageBitmap(f);
+    const s = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas"); c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+    fill(c).drawImage(bmp, 0, 0, c.width, c.height);
+    yield { label: f.name, blob: await toBlob(c) };
+  }
+}
+
+// ---------- run ----------
+function addResult(label, text) {
+  const d = document.createElement("div"); d.className = "page";
+  const h = document.createElement("h3"); h.textContent = label;
+  const t = document.createElement("textarea"); t.value = text; t.spellcheck = false;
+  d.append(h, t); $("#results").append(d);
+}
+
+$("#go").addEventListener("click", async () => {
+  $("#go").disabled = true; $("#results").textContent = ""; $("#saverow").hidden = true; $("#analysis").textContent = ""; $("#saveanrow").hidden = true;
+  $("#barwrap").hidden = false; $("#bar").style.width = "0";
+  let n = 0, failed = "";
+  try {
+    outer: for (const f of files) {
+      try {
+        for await (const pg of pagesOf(f)) {
+          if (n >= MAX_PAGES) { failed = "Stopped at " + MAX_PAGES + " pages."; break outer; }
+          $("#status").textContent = "Reading " + pg.label + "…";
+          const r = await sample(PROMPT, { images: [pg.blob], cache: false });
+          addResult(pg.label, r.text.trim());
+          n++; $("#bar").style.width = Math.min(95, n * 100 / (n + 1)) + "%";
+        }
+      } catch (e) {
+        if (e && (e.code === "not_granted" || e.code === "rate_limited")) {
+          failed = e.code === "rate_limited" ? "Rate limit reached. Wait a moment and try the remaining pages again." : "Permission to use Claude was declined.";
+          break;
+        }
+        addResult(f.name, ""); failed = "Couldn’t read " + f.name + (e && e.message ? " (" + e.message + ")" : "") + ".";
+      }
+    }
+  } finally {
+    $("#bar").style.width = "100%";
+    setTimeout(() => $("#barwrap").hidden = true, 600);
+    $("#status").textContent = failed || (n ? "Done. Check the text, fix anything wrong, then save." : "");
+    $("#saverow").hidden = !$("#results").children.length;
+    $("#go").disabled = false;
+  }
+});
+
+$("#reset").addEventListener("click", () => {
+  $("#results").textContent = ""; $("#saverow").hidden = true; $("#status").textContent = ""; $("#analysis").textContent = ""; $("#saveanrow").hidden = true;
+  $("#file").value = ""; files = []; $("#go").disabled = true;
+});
+
+// ---------- Word document ----------
+//#docx-start
+const clean = s => String(s == null ? "" : s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const runXml = t => '<w:r><w:t xml:space="preserve">' + clean(t) + "</w:t></w:r>";
+const paraXml = block => "<w:p>" + block.split("\n").map((l, i) =>
+  "<w:r>" + (i ? "<w:br/>" : "") + '<w:t xml:space="preserve">' + clean(l) + "</w:t></w:r>").join("") + "</w:p>";
+const headXml = (t, n) => '<w:p><w:pPr><w:pStyle w:val="Heading' + n + '"/></w:pPr>' + runXml(t) + "</w:p>";
+const bulletXml = t => '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:spacing w:after="60"/></w:pPr>' + runXml(t) + "</w:p>";
+
+function transcriptBody(pageTexts) {
+  return pageTexts.map((t, i) => {
+    const blocks = t.trim().split(/\n\s*\n/).filter(b => b.trim());
+    return (i ? '<w:p><w:r><w:br w:type="page"/></w:r></w:p>' : "") + (blocks.length ? blocks.map(paraXml).join("") : "<w:p/>");
+  }).join("");
+}
+function analysisBody(title, note, secs) {
+  return headXml(title, 1) + paraXml(note) + secs.map(sc => headXml(sc.h, 2) + (sc.p ? paraXml(sc.p) : sc.items.map(bulletXml).join(""))).join("");
+}
+async function packDocx(JSZipLib, body) {
+  const H = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
+  const R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.";
+  const hd = (id, name, sz, before, lvl) => '<w:style w:type="paragraph" w:styleId="' + id + '"><w:name w:val="' + name + '"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="' + before + '" w:after="120"/><w:outlineLvl w:val="' + lvl + '"/></w:pPr><w:rPr><w:b/><w:sz w:val="' + sz + '"/></w:rPr></w:style>';
+  const z = new JSZipLib(), add = (n, d) => z.file(n, d, { createFolders: false });
+  add("[Content_Types].xml", H + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="' + CT + 'document.main+xml"/><Override PartName="/word/styles.xml" ContentType="' + CT + 'styles+xml"/><Override PartName="/word/numbering.xml" ContentType="' + CT + 'numbering+xml"/></Types>');
+  add("_rels/.rels", H + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' + R + '/officeDocument" Target="word/document.xml"/></Relationships>');
+  add("word/_rels/document.xml.rels", H + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' + R + '/styles" Target="styles.xml"/><Relationship Id="rId2" Type="' + R + '/numbering" Target="numbering.xml"/></Relationships>');
+  add("word/styles.xml", H + "<w:styles " + W + '><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>' + hd("Heading1", "heading 1", 36, 240, 0) + hd("Heading2", "heading 2", 28, 280, 1) + "</w:styles>");
+  add("word/numbering.xml", H + "<w:numbering " + W + '><w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="hybridMultilevel"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>');
+  add("word/document.xml", H + "<w:document " + W + "><w:body>" + body + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>');
+  return z.generateAsync({ type: "blob", mimeType: CT + "document", compression: "DEFLATE" });
+}
+// Turn the analysis JSON into display sections (used by the screen and the Word file)
+function sections(a) {
+  const L = x => Array.isArray(x) ? x : [], out = [];
+  const add = (h, items) => { items = items.filter(Boolean); if (items.length) out.push({ h, items }); };
+  const src = o => o && o.source ? " (" + o.source + ")" : "";
+  if (a.overview) out.push({ h: "Overview", p: String(a.overview) });
+  add("Key points", L(a.key_points).map(k => k && k.point ? k.point + src(k) : ""));
+  add("Themes across the pages", L(a.themes).map(t => t && t.theme ? t.theme + (t.detail ? ": " + t.detail : "") : ""));
+  add("People and organisations", L(a.people_and_orgs).map(String));
+  add("Dates and deadlines", L(a.dates_and_deadlines).map(d => d && d.what ? (d.date ? d.date + ": " : "") + d.what : ""));
+  add("Figures", L(a.figures).map(f => f && f.item ? f.item + (f.value ? ": " + f.value : "") : ""));
+  add("Action items", L(a.action_items).map(t => t && t.task ? t.task + (t.owner ? " — " + t.owner : "") + src(t) : ""));
+  add("Open questions and gaps", L(a.open_questions).map(String));
+  add("Each page in brief", L(a.per_document).map(d => d && d.summary ? (d.label ? d.label + ": " : "") + d.summary : ""));
+  return out;
+}
+//#docx-end
+
+$("#save").addEventListener("click", async () => {
+  const texts = [...document.querySelectorAll("#results textarea")].map(t => t.value);
+  const blob = await packDocx(JSZip, transcriptBody(texts));
+  if (!downloads) { $("#status").textContent = "Saving isn’t available in this view. Open the link in claude.ai to download."; return; }
+  try {
+    await downloads.save({ filename: baseName + ".docx", data: blob });
+    $("#status").textContent = "Saved.";
+  } catch (e) {
+    $("#status").textContent = e && e.code === "declined" ? "Save cancelled." : "Couldn’t save the file here. Try opening the link in claude.ai.";
+  }
+});
+
+// ---------- analysis ----------
+const AN_PROMPT = "You are analysing text transcribed from several scanned or handwritten pages. Use ONLY what the text says: never invent facts, names, dates or numbers. " +
+  "Where pages disagree or something is unclear, mention it under open_questions. Use an empty list for anything the pages do not cover. " +
+  "Return JSON with exactly these keys: overview (a 3 to 5 sentence summary of everything together), key_points [{point, source}], themes [{theme, detail}] (patterns across pages), " +
+  "people_and_orgs [string], dates_and_deadlines [{date, what}], figures [{item, value}], action_items [{task, owner, source}], open_questions [string], per_document [{label, summary}] (one or two sentences per page label). " +
+  "'source' and 'label' are the page labels between the === markers.";
+let analysis = null;
+
+function showAnalysis(a) {
+  const box = $("#analysis"); box.textContent = "";
+  for (const sc of sections(a)) {
+    const h = document.createElement("h4"); h.textContent = sc.h; box.append(h);
+    if (sc.p) { const p = document.createElement("p"); p.textContent = sc.p; box.append(p); }
+    else { const ul = document.createElement("ul"); sc.items.forEach(t => { const li = document.createElement("li"); li.textContent = t; ul.append(li); }); box.append(ul); }
+  }
+}
+
+$("#analyze").addEventListener("click", async () => {
+  const pages = [...document.querySelectorAll("#results .page")]
+    .map(d => ({ label: d.querySelector("h3").textContent, text: d.querySelector("textarea").value.trim() })).filter(p => p.text);
+  if (!pages.length) { $("#status").textContent = "There is no text to analyse yet."; return; }
+  const docs = pages.map(p => "=== " + p.label + " ===\n" + p.text).join("\n\n");
+  if (new TextEncoder().encode(docs).length > 200000) { $("#status").textContent = "That is too much text to analyse at once. Try fewer pages."; return; }
+  const focus = $("#focus").value.trim();
+  $("#analyze").disabled = true; $("#status").textContent = "Analysing " + pages.length + (pages.length === 1 ? " page…" : " pages…");
+  try {
+    analysis = await sample.json(AN_PROMPT + (focus ? " Pay particular attention to: " + focus + "." : "") + "\n\n" + docs, { cache: false });
+    showAnalysis(analysis); $("#saveanrow").hidden = !sections(analysis).length;
+    $("#status").textContent = sections(analysis).length ? "Analysis ready." : "Claude returned nothing to show. Try again.";
+  } catch (e) {
+    $("#status").textContent = e && e.code === "rate_limited" ? "Rate limit reached. Wait a moment and try again." : "Couldn’t complete the analysis. Please try again.";
+  } finally { $("#analyze").disabled = false; }
+});
+
+$("#saveAn").addEventListener("click", async () => {
+  if (!analysis) return;
+  const n = document.querySelectorAll("#results .page").length;
+  const note = "Based on " + n + (n === 1 ? " page" : " pages") + " of " + baseName + ", analysed on " + new Date().toLocaleDateString() + ". Written by Claude from the transcribed text, so check important details against the originals.";
+  const blob = await packDocx(JSZip, analysisBody("Document analysis", note, sections(analysis)));
+  if (!downloads) { $("#status").textContent = "Saving isn’t available in this view. Open the link in claude.ai to download."; return; }
+  try { await downloads.save({ filename: baseName + "-analysis.docx", data: blob }); $("#status").textContent = "Saved."; }
+  catch (e) { $("#status").textContent = e && e.code === "declined" ? "Save cancelled." : "Couldn’t save the file here. Try opening the link in claude.ai."; }
+});
+</script>
+</body>
+</html>

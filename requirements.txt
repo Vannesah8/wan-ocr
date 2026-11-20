@@ -1,0 +1,7 @@
+python-docx
+opencv-python
+pillow
+numpy
+pytesseract
+pdf2image
+anthropic
