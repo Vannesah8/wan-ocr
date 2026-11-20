@@ -7,12 +7,6 @@ if [[ ! -x "$python" ]]; then
   echo 'Set up the project .venv and install requirements.txt first.' >&2
   exit 1
 fi
-for tool in cloudflared npx; do
-  if ! command -v "$tool" >/dev/null; then
-    echo "Missing $tool. On macOS, install cloudflared and Node.js before connecting." >&2
-    exit 1
-  fi
-done
 umask 077
 work=$(mktemp -d)
 backend_pid=''
@@ -24,6 +18,23 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
+if ! command -v npx >/dev/null; then
+  echo 'Install Node.js with npm, then rerun this script.' >&2
+  exit 1
+fi
+if ! command -v cloudflared >/dev/null; then
+  case "$(uname -s)-$(uname -m)" in
+    Darwin-x86_64) arch=amd64 ;;
+    Darwin-arm64) arch=arm64 ;;
+    *) echo 'Install cloudflared for this platform, then rerun.' >&2; exit 1 ;;
+  esac
+  echo "Downloading Cloudflare Tunnel for macOS ($arch)…"
+  curl -fLsS --retry 2 -o "$work/cloudflared.tgz" \
+    "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-$arch.tgz"
+  tar -xzf "$work/cloudflared.tgz" -C "$work"
+  "$work/cloudflared" --version
+  export PATH="$work:$PATH"
+fi
 secret=$("$python" -c 'import secrets; print(secrets.token_hex(32))')
 # Let the OS allocate a free port, even when the local dashboard is running.
 WAN_PROXY_SECRET="$secret" "$python" -u - >"$work/backend.log" 2>&1 <<'PY' &
