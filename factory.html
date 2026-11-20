@@ -16,18 +16,24 @@ fieldset{border:1px solid var(--line);border-radius:8px;padding:12px}fieldset la
 <symbol id="inspect" viewBox="0 0 140 84"><path d="M13 69h114M22 65V29h38v8H30v28m48 0V37h28v28M18 15h42v11H18zm21 23 10 12m2-12 8 8m-8 8h17v10H51z"/><circle cx="89" cy="23" r="15"/><path d="m100 34 12 12M82 23l5 5 9-10"/></symbol>
 <symbol id="silo" viewBox="0 0 140 84"><ellipse cx="71" cy="19" rx="36" ry="10"/><path d="M35 19v35q0 10 36 11t36-11V19M37 53q33 15 68 0M40 60v13m60-13v13M49 28v22m43-22v22M62 65v8h18v-8"/></symbol>
 </defs></svg>
-<header><strong>wan-ocr</strong><nav id="accountNav" hidden><span id="identity"></span> &nbsp; <button id="signout">Sign out</button> &nbsp; <a href="/">Dashboard</a> &nbsp; / &nbsp; <a href="/analysis">ANALYSIS</a></nav></header><main>
-<section id="accountGate" class="panel"><h1 style="font-size:2.3rem">Welcome to wan-ocr</h1>
-<p>Create an account to save your work, or sign in to open your files.</p>
-<form id="accountForm" class="actions"><label>Email <input id="email" type="email" autocomplete="username" required></label>
-<label>Password <input id="password" type="password" autocomplete="new-password" maxlength="256" required></label>
-<button id="authSubmit">Create account</button><button type="button" class="alt" id="authSwitch">Sign in instead</button></form>
-<small id="authHint">Use at least 12 characters for your password.</small>
-<p id="authMessage" role="status"></p></section>
-<div id="dashboard" hidden><section class="floor"><h1>wan-ocr</h1><p>Analyse, convert and compile your documents.</p><a class="launch" href="/analysis">ANALYSIS →</a></section>
-<section class="services" id="services" aria-labelledby="services-title"><div class="row"><h2 id="services-title">Our services</h2><p class="intro">Three ways wan-ocr turns documents into usable work.</p></div><div class="cards"><article class="service"><b>01 / ANALYSIS</b><h3><a href="/analysis">Document Analysis</a></h3><p>Read every page, surface key facts and totals, and flag anything that needs a closer look.</p></article><article class="service"><b>02 / CONVERSION</b><h3>Document Conversion</h3><p>Convert scans, images and PDFs into clean, editable Word documents with OCR.</p></article><article class="service"><b>03 / COMPILING</b><h3>Document Compiler</h3><p>Collect many documents into one structured, cumulative report you can audit and download.</p></article></div></section>
+<header><strong><a href="/">wan-ocr</a></strong><nav><a href="/">Dashboard</a> · <a href="/analysis">Analysis</a> · <a href="/conversion">Conversion</a> · <a href="/compiler">Compiler</a></nav></header><main>
+<p id="connection" role="status"></p>
+<div id="dashboard" hidden><section class="floor"><h1>wan-ocr</h1><p>Analyse, convert and compile your documents.</p></section>
+<section class="services" id="services" aria-labelledby="services-title"><div class="row"><h2 id="services-title">Our services</h2><p class="intro">Three ways wan-ocr turns documents into usable work.</p></div><div class="cards"><article class="service"><h3><a href="/analysis">Analysis →</a></h3><p>Read every page, surface key facts and totals, and flag anything that needs a closer look.</p></article><article class="service"><h3><a href="/conversion">Conversion →</a></h3><p>Upload a document and choose Word, PDF or plain text for the converted copy.</p></article><article class="service"><h3><a href="/compiler">Compiler →</a></h3><p>Sort documents into department or subject folders and download the grouped originals.</p></article></div></section>
 <section class="panel" id="myFiles"><h2>Files</h2><p id="filesStatus">Loading completed work…</p>
 <div id="fileHistory" class="scroll"></div></section></div>
+<section id="conversion" class="panel" hidden><h1>Conversion</h1>
+<form id="convertForm"><p><label>Upload the current document <input id="sourceDoc" name="document" type="file" accept=".docx,.txt,.pdf" required></label></p>
+<fieldset id="targetBox" hidden><legend>Choose the final format</legend><select id="target" name="target" aria-label="Final format"><option value="docx">Word (.docx)</option><option value="pdf">PDF</option><option value="txt">Plain text (.txt)</option></select>
+<button>Convert document</button></fieldset><small>Conversion uses readable text and tables. Scanned pages need OCR first.</small></form>
+<div id="convertResult" role="status"></div></section>
+<section id="compiler" class="panel" hidden><h1>Compiler</h1><form id="compileForm">
+<label for="categories">Create categories by department or subject</label>
+<p>Enter one category per line. Add matching words after the category name.</p>
+<textarea name="categories" id="categories" required rows="4" placeholder="Finance: invoice, budget&#10;Education: curriculum, classroom"></textarea>
+<fieldset id="compileDocs" hidden><legend>Upload documents to categorise</legend>
+<input type="file" name="documents" multiple required accept=".docx,.pdf,.txt"><button>Check and categorise</button></fieldset></form>
+<div id="compileResult" role="status"></div><div id="categoryFiles" class="scroll"></div></section>
 <div id="analysis" hidden>
 <section id="setup" class="panel"><h1 style="font-size:2.3rem">Choose your report format</h1>
 <form id="formatForm">
@@ -82,6 +88,7 @@ formatForm.onsubmit = async event => {
             params.name = body.name;
         }
         $('formatMessage').textContent = 'Saving format…';
+        await ready;
         const batch = await post('/batch',params,body);
         project = selected;
         batchId = batch.id;
@@ -151,58 +158,57 @@ row.status='Uploading';showQueue();
 try {await post('/upload',{id:batchId,region,name:f.name},f);}
 catch(error){row.status='Upload failed';showQueue();throw error}
 row.uploadPath=row.path;row.status='Uploaded';showQueue()}activeRun=(await post('/run',{id:batchId})).batch;batchId='';files=[];$('docs').value='';$('folder').value='';$('queue').textContent='Batch received. Add another batch after this run.';await poll()}catch(e){lock(false);$('msg').textContent=e.message;$('signal').textContent='Intake needs attention'}};
-let signup = true;
-$('authSwitch').onclick = () => {
-    signup = !signup;
-    $('authSubmit').textContent = signup ? 'Create account' : 'Sign in';
-    $('authSwitch').textContent = signup ? 'Sign in instead' : 'Create an account instead';
-    $('password').autocomplete = signup ? 'new-password' : 'current-password';
-    $('authHint').hidden = !signup;
-    $('authMessage').textContent = '';
+const page = location.pathname.slice(1) || 'dashboard';
+for(const id of ['dashboard','analysis','conversion','compiler']){
+    $(id).hidden = id !== page;
+}
+$('sourceDoc').onchange=()=>{
+    const file=$('sourceDoc').files[0];
+    $('targetBox').hidden=!file;
+    if(!file)return;
+    const ext=file.name.split('.').pop().toLowerCase();
+    for(const opt of $('target').options)opt.disabled=opt.value===ext;
+    $('target').value=[...$('target').options].find(opt=>!opt.disabled).value;
+    $('convertResult').replaceChildren();
 };
-$('accountForm').onsubmit = async event => {
+$('categories').oninput=()=>{$('compileDocs').hidden=!$('categories').value.trim()};
+async function submitDocuments(event, route, outputId){
     event.preventDefault();
-    $('authSubmit').disabled = true;
-    try {
-        await post(signup ? '/signup' : '/login', {}, JSON.stringify({
-            email: $('email').value, password: $('password').value
-        }));
-        location.reload();
-    } catch (error) {
-        $('authMessage').textContent = error.message;
-        $('authSubmit').disabled = false;
-    }
-};
-$('signout').onclick = async () => {
-    try {
-        await post('/logout');
-        location.replace('/');
-    } catch(error) {
-        alert(error.message);
-    }
-};
+    const form=event.currentTarget, button=form.querySelector('button'), output=$(outputId);
+    button.disabled=true;
+    output.textContent=route==='/compile'?'Checking documents against your categories…':'Converting document…';
+    if(route==='/compile')$('categoryFiles').replaceChildren();
+    try{
+        await ready;
+        const result=await post(route,{},new FormData(form));
+        const link=node('a',route==='/compile'?'Download category folders (ZIP)':'Download '+result.output);
+        link.href='/download?'+new URLSearchParams({id:result.id});
+        output.replaceChildren(link);
+        if(result.entries.length)table('categoryFiles',['Category','File','Check'],result.entries.map(r=>[r.category,r.file,r.reason]));
+    }catch(error){output.textContent=error.message}
+    finally{button.disabled=false}
+}
+$('convertForm').onsubmit=e=>submitDocuments(e,'/convert','convertResult');
+$('compileForm').onsubmit=e=>submitDocuments(e,'/compile','compileResult');
+const ready = fetch('/session',{cache:'no-store'}).then(async response=>{
+    if(!response.ok || !(await response.json()).ready)throw Error('Workspace unavailable.');
+});
 async function openWorkspace(){
     try {
-        const response = await fetch('/session', {cache:'no-store'});
-        if(!response.ok) throw Error();
-        const {email} = await response.json();
-        if(!email) return;
-        $('accountGate').hidden = true;
-        $('identity').textContent = email;
-        $('accountNav').hidden = false;
-        $('dashboard').hidden = analysisPage;
-        $('analysis').hidden = !analysisPage;
+        await ready;
         if(analysisPage) return poll();
+        if(page!=='dashboard')return;
         const result = await fetch('/files', {cache:'no-store'});
         if(!result.ok) throw Error();
         const {files} = await result.json();
-        $('filesStatus').textContent = files.length ? 'Completed analyses, newest first.' : 'Your completed analyses and downloads will appear here.';
+        $('filesStatus').textContent = files.length ? 'Completed work, newest first.' : 'Your completed work and downloads will appear here.';
         if(!files.length) return;
         table('fileHistory',['Project','Completed','Source files','Downloads'],
               files.map(f=>[f.project,new Date(f.date).toLocaleString(),f.files,'']));
         const rows = $('fileHistory').querySelectorAll('tbody tr');
         files.forEach((file,i)=>{
             const cell = rows[i].lastElementChild;
+            if(file.output){const link=node('a',file.output);link.href='/download?'+new URLSearchParams({id:file.id});cell.append(link);return}
             for(const [label,name] of [['Word summary','analysis-summary.docx'],['Full ZIP','analysis-bucket.zip']]){
                 const link = node('a',label);
                 link.href = '/report?'+new URLSearchParams({id:file.id,name});
@@ -211,7 +217,8 @@ async function openWorkspace(){
         });
     } catch(error) {
         const message = 'The workspace needs the wan-ocr Python server. Open the address printed by factory.py.';
-        ($('accountGate').hidden ? $('filesStatus') : $('authMessage')).textContent = message;
+        $('connection').textContent = message;
+        $('filesStatus').textContent = 'Files are unavailable.';
     }
 }
 window.addEventListener('pageshow',event=>{if(event.persisted)location.reload()});

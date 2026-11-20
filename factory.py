@@ -2,6 +2,9 @@
 from io import BytesIO
 from docx import Document
 import sessions
+import secrets
+from http.cookies import SimpleCookie, CookieError
+from document_services import form, process_service
 import csv
 import json
 import os
@@ -116,24 +119,62 @@ class Handler(BaseHTTPRequestHandler):
     def reply(self, data, status=200):
         self.send(json.dumps(data).encode(), "application/json", status)
 
+    def workspace(self, create=False):
+        existing = sessions.identify(DATA, sessions.token_from(self.headers))
+        if existing:
+            return DATA / "users" / str(existing[0])
+        cookies = SimpleCookie()
+        try:
+            cookies.load(self.headers.get("Cookie", ""))
+        except CookieError:
+            pass
+        token = cookies["wan_browser"].value if "wan_browser" in cookies else ""
+        if re.fullmatch(r"[0-9a-f]{64}", token):
+            archive = DATA / "browsers" / sessions.digest(token).hex()
+            if archive.is_dir():
+                return archive
+        if create:
+            token = secrets.token_hex(32)
+            archive = DATA / "browsers" / sessions.digest(token).hex()
+            archive.mkdir(parents=True)
+            self.session_cookie = f"wan_browser={token}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict"
+            return archive
+        return None
+
     def do_GET(self):
         url = urlsplit(self.path)
-        if url.path in ("/", "/analysis"):
+        if url.path in ("/", "/analysis", "/conversion", "/compiler"):
             self.send((BASE / "factory.html").read_bytes(), "text/html; charset=utf-8")
             return
-        token = sessions.token_from(self.headers)
-        user = sessions.identify(DATA, token)
+        archive = self.workspace(create=url.path == "/session")
+        if not archive:
+            return self.reply({"error": "Open the dashboard with cookies enabled."}, 401)
         if url.path == "/session":
-            return self.reply({"email": user[1] if user else None})
-        if not user:
-            return self.reply({"error": "Sign in to open your workspace."}, 401)
-        archive = DATA / "users" / str(user[0])
+            return self.reply({"ready": True})
+        if url.path == "/download":
+            job = parse_qs(url.query).get("id", [""])[0]
+            root = archive / "services" / job
+            if not re.fullmatch(r"[0-9a-f]{32}", job) or not (root / "result.json").is_file():
+                return self.send_error(404)
+            output = json.loads((root / "result.json").read_text(encoding="utf-8"))["output"]
+            path = root / output
+            self.send_response(200)
+            self.send_header("Content-Disposition", f'attachment; filename="{output}"')
+            self.send_header("Content-Length", str(path.stat().st_size))
+            self.send_header("Content-Type","application/octet-stream")
+            self.end_headers()
+            with path.open("rb") as stream:
+                shutil.copyfileobj(stream,self.wfile)
+            return
         if url.path == "/files":
             files = []
             for path in published(archive):
                 summary = json.loads(path.read_text(encoding="utf-8"))
                 files.append({key: summary[key] for key in ("id", "project", "date", "files")})
-            return self.reply({"files": files})
+            for path in (archive / "services").glob("*/result.json"):
+                item = json.loads(path.read_text(encoding="utf-8"))
+                files.append({key:item[key] for key in ("id","project","date","files","output","service")})
+            return self.reply({"files": sorted(files, key=lambda f:f["date"], reverse=True)})
         if url.path == "/state":
             items = published(archive)
             project = parse_qs(url.query).get("project", ["Booklists"])[0]
@@ -172,28 +213,13 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         args = parse_qs(url.query)
         try:
-            token = sessions.token_from(self.headers)
-            if url.path in ("/signup", "/login", "/logout"):
-                age = 0
-                if url.path == "/logout":
-                    sessions.logout(DATA, token)
-                    token = ""
-                else:
-                    size = int(self.headers.get("Content-Length", 0))
-                    if not 0 < size <= 8192:
-                        raise ValueError("Enter your email and password.")
-                    credentials = json.loads(self.rfile.read(size))
-                    if not isinstance(credentials, dict):
-                        raise ValueError("Enter your email and password.")
-                    token = sessions.authenticate(DATA, credentials.get("email"), credentials.get("password"),
-                                                  url.path == "/signup")
-                    age = sessions.LIFETIME
-                self.session_cookie = f"{sessions.COOKIE}={token}; Path=/; Max-Age={age}; HttpOnly; SameSite=Strict"
-                return self.reply({"ok": True})
-            user = sessions.identify(DATA, token)
-            if not user:
-                return self.reply({"error": "Sign in to open your workspace."}, 401)
-            archive = DATA / "users" / str(user[0])
+            archive = self.workspace()
+            if not archive:
+                return self.reply({"error": "Open the dashboard with cookies enabled."}, 401)
+            if url.path in ("/convert", "/compile"):
+                fields, documents = form(self)
+                service = "conversion" if url.path == "/convert" else "compiler"
+                return self.reply(process_service(service, fields, documents, archive))
             if url.path == "/batch":
                 project = args.get("project", ["Booklists"])[0].strip()
                 if not project or len(project) > 100 or any(ord(c) < 32 for c in project):

@@ -14,7 +14,7 @@ These three services are shown on the local dashboard.
 Install and start the local dashboard from this directory.
 
 ```sh
-python3 -m pip install "python-docx>=1.2" "pandas>=2"
+python3 -m pip install -r requirements.txt
 python3 booklists.py --self-test
 python3 factory.py
 ```
@@ -103,8 +103,8 @@ On the local dashboard, open **ANALYSIS**. Enter a project name (or select a pre
 
 The final **Analytics bucket** offers a Word summary with school counts, quantities by region and product, and review counts. **Download full ZIP** includes that summary and all ten audit and report files. Both exports cover the whole project, including when the dashboard table is filtered to one region.
 
-### Accounts and Files
+### Browser workspaces
 
-Create an account on the Python dashboard. A session cookie remembers the signed-in account in that browser for 30 days. Signing out revokes that session. On a shared computer, sign out before someone else uses the same browser profile.
+Open the Python dashboard to use Analysis, Conversion and Compiler without signing up. A browser cookie identifies each guest workspace. Clearing it or using another browser opens a different workspace. Existing valid account sessions still see their original files.
 
-The dashboard shows the available services and a Files section with completed analyses and Word and ZIP downloads for the current account. The server keeps each account’s batches, processing information and reports separate, including when two accounts use the same project name. Runs from before accounts were introduced remain in the original archive without an assigned owner. Cloudflare’s static pages require the Python service for authentication and private downloads.
+Conversion accepts DOCX, text-based PDF and UTF-8 TXT and exports readable content as Word, PDF or plain text. Compiler accepts one category per line, with optional comma-separated keywords after a colon. It checks filename and document text, sorts by the strongest distinct keyword match and puts ties, unreadable documents and unmatched files in Needs review. Download the original documents organised in category folders as a ZIP. All three services save completed outputs to dashboard Files. The static Cloudflare build provides the interface; processing and private file storage require the Python service.

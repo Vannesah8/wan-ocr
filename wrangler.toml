@@ -3,7 +3,7 @@ compatibility_date = "2026-11-20"
 
 # Static dashboard and conversion pages. The analysis API runs in factory.py.
 [build]
-command = "mkdir -p .wrangler/site && cp factory.html .wrangler/site/index.html && cp factory.html .wrangler/site/analysis.html && cp handwriting-to-word.html .wrangler/site/handwriting-to-word.html"
+command = "mkdir -p .wrangler/site && cp factory.html .wrangler/site/index.html && cp factory.html .wrangler/site/analysis.html && cp factory.html .wrangler/site/conversion.html && cp factory.html .wrangler/site/compiler.html && cp handwriting-to-word.html .wrangler/site/handwriting-to-word.html"
 
 [assets]
 directory = "./.wrangler/site"
