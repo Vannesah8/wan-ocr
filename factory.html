@@ -9,17 +9,25 @@
 .downloads a{display:inline-block;border-radius:7px;padding:10px 16px;background:var(--green);color:white;font-weight:650;text-decoration:none}
 .downloads a+a{background:#e9f4e4;color:var(--ink)}
 .services{margin-top:18px}.services .row{align-items:baseline}.services .intro{color:#4c6a5b;max-width:70ch}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px}.service{background:white;border:1px solid var(--line);border-radius:16px;padding:20px;position:relative;overflow:hidden}.service::before{content:"";position:absolute;inset:0 auto 0 0;width:5px;background:var(--green)}.service b{display:block;color:var(--green);letter-spacing:.14em;font-size:.75rem}.service h3{margin:10px 0 6px}.service p{color:#456256}@media(max-width:900px){.cards{grid-template-columns:1fr}}
-fieldset{border:1px solid var(--line);border-radius:8px;padding:12px}fieldset label{display:inline-block;margin:4px 16px 4px 0}textarea{width:min(100%,620px);font:inherit;padding:10px}#fileList{width:100%;max-height:260px}#formatForm p{margin:14px 0}</style>
+fieldset{border:1px solid var(--line);border-radius:8px;padding:12px}fieldset label{display:inline-block;margin:4px 16px 4px 0}textarea{width:min(100%,620px);font:inherit;padding:10px}#fileList{width:100%;max-height:260px}#formatForm p{margin:14px 0}#accountForm input{padding:10px;border:1px solid var(--line);border-radius:7px;font:inherit;max-width:100%}#accountForm{margin:16px 0}#fileHistory a{display:inline-block;margin:3px 12px 3px 0}</style>
 <svg class="library" xmlns="http://www.w3.org/2000/svg"><defs>
 <symbol id="dock" viewBox="0 0 140 84"><path d="M10 64V35l17-10v10l17-10v10l18-10v39zM16 33V14h8l2 14M21 45h8v8h-8zm17 0h8v8h-8zM68 48h38v18H68zm38 6h13l10 9v3h-23z"/><circle cx="80" cy="71" r="5"/><circle cx="117" cy="71" r="5"/></symbol>
 <symbol id="press" viewBox="0 0 140 84"><path d="M24 71V15h84v56h-9V27H34v44zm25-44h38v12H49zm10 12h18v12H59zm-14 16h46v8H45zM19 72h95M39 66h57"/></symbol>
 <symbol id="inspect" viewBox="0 0 140 84"><path d="M13 69h114M22 65V29h38v8H30v28m48 0V37h28v28M18 15h42v11H18zm21 23 10 12m2-12 8 8m-8 8h17v10H51z"/><circle cx="89" cy="23" r="15"/><path d="m100 34 12 12M82 23l5 5 9-10"/></symbol>
 <symbol id="silo" viewBox="0 0 140 84"><ellipse cx="71" cy="19" rx="36" ry="10"/><path d="M35 19v35q0 10 36 11t36-11V19M37 53q33 15 68 0M40 60v13m60-13v13M49 28v22m43-22v22M62 65v8h18v-8"/></symbol>
 </defs></svg>
-<header><strong>wan-ocr</strong><nav><a href="/">Dashboard</a> &nbsp; / &nbsp; <a href="/analysis">ANALYSIS</a></nav></header><main>
-<div id="dashboard"><section class="floor"><h1>wan-ocr</h1><p>Analyse, convert and compile your documents.</p><a class="launch" href="/analysis">ANALYSIS →</a></section>
-<section class="panel" aria-labelledby="projects-title"><h2 id="projects-title">Projects</h2><h3><a href="/analysis?project=Booklists">Booklists</a></h3><p>School stationery demand by region, school and grade.</p></section>
-<section class="services" id="services" aria-labelledby="services-title"><div class="row"><h2 id="services-title">Our services</h2><p class="intro">Three ways wan-ocr turns documents into usable work.</p></div><div class="cards"><article class="service"><b>01 / ANALYSIS</b><h3><a href="/analysis">Document Analysis</a></h3><p>Read every page, surface key facts and totals, and flag anything that needs a closer look.</p></article><article class="service"><b>02 / CONVERSION</b><h3>Document Conversion</h3><p>Convert scans, images and PDFs into clean, editable Word documents with OCR.</p></article><article class="service"><b>03 / COMPILING</b><h3>Document Compiler</h3><p>Collect many documents into one structured, cumulative report you can audit and download.</p></article></div></section></div>
+<header><strong>wan-ocr</strong><nav id="accountNav" hidden><span id="identity"></span> &nbsp; <button id="signout">Sign out</button> &nbsp; <a href="/">Dashboard</a> &nbsp; / &nbsp; <a href="/analysis">ANALYSIS</a></nav></header><main>
+<section id="accountGate" class="panel"><h1 style="font-size:2.3rem">Welcome to wan-ocr</h1>
+<p>Create an account to save your work, or sign in to open your files.</p>
+<form id="accountForm" class="actions"><label>Email <input id="email" type="email" autocomplete="username" required></label>
+<label>Password <input id="password" type="password" autocomplete="new-password" maxlength="256" required></label>
+<button id="authSubmit">Create account</button><button type="button" class="alt" id="authSwitch">Sign in instead</button></form>
+<small id="authHint">Use at least 12 characters for your password.</small>
+<p id="authMessage" role="status"></p></section>
+<div id="dashboard" hidden><section class="floor"><h1>wan-ocr</h1><p>Analyse, convert and compile your documents.</p><a class="launch" href="/analysis">ANALYSIS →</a></section>
+<section class="services" id="services" aria-labelledby="services-title"><div class="row"><h2 id="services-title">Our services</h2><p class="intro">Three ways wan-ocr turns documents into usable work.</p></div><div class="cards"><article class="service"><b>01 / ANALYSIS</b><h3><a href="/analysis">Document Analysis</a></h3><p>Read every page, surface key facts and totals, and flag anything that needs a closer look.</p></article><article class="service"><b>02 / CONVERSION</b><h3>Document Conversion</h3><p>Convert scans, images and PDFs into clean, editable Word documents with OCR.</p></article><article class="service"><b>03 / COMPILING</b><h3>Document Compiler</h3><p>Collect many documents into one structured, cumulative report you can audit and download.</p></article></div></section>
+<section class="panel" id="myFiles"><h2>Files</h2><p id="filesStatus">Loading completed work…</p>
+<div id="fileHistory" class="scroll"></div></section></div>
 <div id="analysis" hidden>
 <section id="setup" class="panel"><h1 style="font-size:2.3rem">Choose your report format</h1>
 <form id="formatForm">
@@ -38,8 +46,7 @@ const $=id=>document.getElementById(id), labels=['Intake dock','Extraction press
 $('stations').innerHTML=labels.map((label,i)=>'<div class="station"><svg aria-hidden="true"><use href="#'+icons[i]+'"/></svg><div class="belt"></div><b>'+label+'</b><small>Waiting</small></div>').join('');
 const analysisPage = location.pathname === '/analysis';
 let project = (new URLSearchParams(location.search).get('project') || '').trim();
-$('dashboard').hidden = analysisPage;
-$('analysis').hidden = !analysisPage;
+
 $('workflow').hidden = true;
 $('project').value = project || 'Booklists';
 if (analysisPage) document.title = (project || 'Analysis') + ' | wan-ocr';
@@ -144,5 +151,69 @@ row.status='Uploading';showQueue();
 try {await post('/upload',{id:batchId,region,name:f.name},f);}
 catch(error){row.status='Upload failed';showQueue();throw error}
 row.uploadPath=row.path;row.status='Uploaded';showQueue()}activeRun=(await post('/run',{id:batchId})).batch;batchId='';files=[];$('docs').value='';$('folder').value='';$('queue').textContent='Batch received. Add another batch after this run.';await poll()}catch(e){lock(false);$('msg').textContent=e.message;$('signal').textContent='Intake needs attention'}};
-if(analysisPage)poll();
+let signup = true;
+$('authSwitch').onclick = () => {
+    signup = !signup;
+    $('authSubmit').textContent = signup ? 'Create account' : 'Sign in';
+    $('authSwitch').textContent = signup ? 'Sign in instead' : 'Create an account instead';
+    $('password').autocomplete = signup ? 'new-password' : 'current-password';
+    $('authHint').hidden = !signup;
+    $('authMessage').textContent = '';
+};
+$('accountForm').onsubmit = async event => {
+    event.preventDefault();
+    $('authSubmit').disabled = true;
+    try {
+        await post(signup ? '/signup' : '/login', {}, JSON.stringify({
+            email: $('email').value, password: $('password').value
+        }));
+        location.reload();
+    } catch (error) {
+        $('authMessage').textContent = error.message;
+        $('authSubmit').disabled = false;
+    }
+};
+$('signout').onclick = async () => {
+    try {
+        await post('/logout');
+        location.replace('/');
+    } catch(error) {
+        alert(error.message);
+    }
+};
+async function openWorkspace(){
+    try {
+        const response = await fetch('/session', {cache:'no-store'});
+        if(!response.ok) throw Error();
+        const {email} = await response.json();
+        if(!email) return;
+        $('accountGate').hidden = true;
+        $('identity').textContent = email;
+        $('accountNav').hidden = false;
+        $('dashboard').hidden = analysisPage;
+        $('analysis').hidden = !analysisPage;
+        if(analysisPage) return poll();
+        const result = await fetch('/files', {cache:'no-store'});
+        if(!result.ok) throw Error();
+        const {files} = await result.json();
+        $('filesStatus').textContent = files.length ? 'Completed analyses, newest first.' : 'Your completed analyses and downloads will appear here.';
+        if(!files.length) return;
+        table('fileHistory',['Project','Completed','Source files','Downloads'],
+              files.map(f=>[f.project,new Date(f.date).toLocaleString(),f.files,'']));
+        const rows = $('fileHistory').querySelectorAll('tbody tr');
+        files.forEach((file,i)=>{
+            const cell = rows[i].lastElementChild;
+            for(const [label,name] of [['Word summary','analysis-summary.docx'],['Full ZIP','analysis-bucket.zip']]){
+                const link = node('a',label);
+                link.href = '/report?'+new URLSearchParams({id:file.id,name});
+                cell.append(link,'  ');
+            }
+        });
+    } catch(error) {
+        const message = 'The workspace needs the wan-ocr Python server. Open the address printed by factory.py.';
+        ($('accountGate').hidden ? $('filesStatus') : $('authMessage')).textContent = message;
+    }
+}
+window.addEventListener('pageshow',event=>{if(event.persisted)location.reload()});
+openWorkspace();
 </script></html>

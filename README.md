@@ -102,3 +102,9 @@ to your own server that calls the Anthropic API.
 On the local dashboard, open **ANALYSIS**. Enter a project name (or select a previous project) and open it. Upload the regional folder or individual .docx files, then start the processing line. Each project accumulates its own submissions. Earlier runs created before project setup are available under **Booklists**.
 
 The final **Analytics bucket** offers a Word summary with school counts, quantities by region and product, and review counts. **Download full ZIP** includes that summary and all ten audit and report files. Both exports cover the whole project, including when the dashboard table is filtered to one region.
+
+### Accounts and Files
+
+Create an account on the Python dashboard. A session cookie remembers the signed-in account in that browser for 30 days. Signing out revokes that session. On a shared computer, sign out before someone else uses the same browser profile.
+
+The dashboard shows the available services and a Files section with completed analyses and Word and ZIP downloads for the current account. The server keeps each account’s batches, processing information and reports separate, including when two accounts use the same project name. Runs from before accounts were introduced remain in the original archive without an assigned owner. Cloudflare’s static pages require the Python service for authentication and private downloads.

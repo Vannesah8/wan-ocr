@@ -1,6 +1,7 @@
 """Local desktop dashboard. Run python factory.py and open the printed URL."""
 from io import BytesIO
 from docx import Document
+import sessions
 import csv
 import json
 import os
@@ -25,8 +26,8 @@ REPORTS = ("regional_totals.csv", "school_counts.csv", "flagged.csv", "duplicate
            "product_mapping.csv", "raw_rows.csv", "booklists_wide.csv", "long.csv", "blanks.csv", "assumptions.txt")
 
 
-def published():
-    return sorted((p for p in DATA.glob("*/summary.json")), reverse=True)
+def published(root):
+    return sorted((p for p in root.glob("*/summary.json")), reverse=True)
 
 
 def project_for(job):
@@ -39,14 +40,14 @@ def records(path):
         yield from csv.DictReader(stream)
 
 
-def run(batch):
+def run(batch, archive):
     global STATE
-    job = DATA / batch
+    job = archive / batch
     project = project_for(job)
     try:
-        with TemporaryDirectory(dir=DATA) as tmp:
+        with TemporaryDirectory(dir=archive) as tmp:
             root = Path(tmp)
-            for src in [p.parent for p in reversed(published()) if project_for(p.parent) == project] + [job]:
+            for src in [p.parent for p in reversed(published(archive)) if project_for(p.parent) == project] + [job]:
                 for file in (src / "uploads").glob("*/*.docx"):
                     target = root / file.relative_to(src / "uploads")
                     target.parent.mkdir(exist_ok=True)
@@ -57,11 +58,11 @@ def run(batch):
 
             def progress(done, total, current):
                 global STATE
-                STATE = dict(phase="processing", project=project, done=done, total=total, current=current, sources=sources, batch=batch)
+                STATE = dict(owner=archive.name, phase="processing", project=project, done=done, total=total, current=current, sources=sources, batch=batch)
 
             output = job / "reports"
             process(root, output, progress_callback=progress)
-            STATE = {"phase": "collecting", "project": project, "total": files}
+            STATE = {"owner": archive.name, "phase": "collecting", "project": project, "total": files}
             flags = records(output / "flagged.csv")
             first_flags = []
             flagged_sources = set()
@@ -82,9 +83,9 @@ def run(batch):
             staged = job / "pending.json"
             staged.write_text(json.dumps(summary), encoding="utf-8")
             staged.replace(job / "summary.json")
-            STATE = {"phase": "complete", "total": files}
+            STATE = {"owner": archive.name, "phase": "complete", "total": files}
     except Exception as exc:
-        STATE = {"phase": "error", "project": project, "message": str(exc)}
+        STATE = {"owner": archive.name, "phase": "error", "project": project, "message": str(exc)}
         shutil.rmtree(job / "reports", ignore_errors=True)
     finally:
         LOCK.release()
@@ -97,6 +98,12 @@ def part(value):
 
 
 class Handler(BaseHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store")
+        if hasattr(self, "session_cookie"):
+            self.send_header("Set-Cookie", self.session_cookie)
+        super().end_headers()
+
     def send(self, body, mime, status=200, filename=None):
         self.send_response(status)
         self.send_header("Content-Type", mime)
@@ -113,14 +120,28 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         if url.path in ("/", "/analysis"):
             self.send((BASE / "factory.html").read_bytes(), "text/html; charset=utf-8")
-        elif url.path == "/state":
-            items = published()
+            return
+        token = sessions.token_from(self.headers)
+        user = sessions.identify(DATA, token)
+        if url.path == "/session":
+            return self.reply({"email": user[1] if user else None})
+        if not user:
+            return self.reply({"error": "Sign in to open your workspace."}, 401)
+        archive = DATA / "users" / str(user[0])
+        if url.path == "/files":
+            files = []
+            for path in published(archive):
+                summary = json.loads(path.read_text(encoding="utf-8"))
+                files.append({key: summary[key] for key in ("id", "project", "date", "files")})
+            return self.reply({"files": files})
+        if url.path == "/state":
+            items = published(archive)
             project = parse_qs(url.query).get("project", ["Booklists"])[0]
             projects = {p: project_for(p.parent) for p in items}
             match = next((p for p in items if projects[p] == project), None)
             latest = json.loads(match.read_text(encoding="utf-8")) if match else None
             state = STATE
-            if state.get("project", project) != project:
+            if state.get("owner") != archive.name or state.get("project", project) != project:
                 state = {"phase": "idle"}
             self.reply(dict(state=state, bucket=latest, reports=REPORTS,
                             projects=["Booklists", *sorted(set(projects.values()) - {"Booklists"})]))
@@ -128,11 +149,11 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(url.query)
             name = query.get("name", [""])[0]
             batch = query.get("id", [""])[0]
-            if name not in (*REPORTS, WORD, ZIP) or not re.fullmatch(r"[0-9]{20}-[a-f0-9]{8}", batch) or not (DATA / batch / "summary.json").is_file():
+            if name not in (*REPORTS, WORD, ZIP) or not re.fullmatch(r"[0-9]{20}-[a-f0-9]{8}", batch) or not (archive / batch / "summary.json").is_file():
                 return self.send_error(404)
-            path = DATA / batch / "reports" / name
+            path = archive / batch / "reports" / name
             if name in (WORD, ZIP):
-                path = export(DATA / batch, name, REPORTS)
+                path = export(archive / batch, name, REPORTS)
             self.send_response(200)
             self.send_header("Content-Disposition", f'attachment; filename="{name}"')
             self.send_header("Content-Type", "application/octet-stream")
@@ -151,6 +172,28 @@ class Handler(BaseHTTPRequestHandler):
         url = urlsplit(self.path)
         args = parse_qs(url.query)
         try:
+            token = sessions.token_from(self.headers)
+            if url.path in ("/signup", "/login", "/logout"):
+                age = 0
+                if url.path == "/logout":
+                    sessions.logout(DATA, token)
+                    token = ""
+                else:
+                    size = int(self.headers.get("Content-Length", 0))
+                    if not 0 < size <= 8192:
+                        raise ValueError("Enter your email and password.")
+                    credentials = json.loads(self.rfile.read(size))
+                    if not isinstance(credentials, dict):
+                        raise ValueError("Enter your email and password.")
+                    token = sessions.authenticate(DATA, credentials.get("email"), credentials.get("password"),
+                                                  url.path == "/signup")
+                    age = sessions.LIFETIME
+                self.session_cookie = f"{sessions.COOKIE}={token}; Path=/; Max-Age={age}; HttpOnly; SameSite=Strict"
+                return self.reply({"ok": True})
+            user = sessions.identify(DATA, token)
+            if not user:
+                return self.reply({"error": "Sign in to open your workspace."}, 401)
+            archive = DATA / "users" / str(user[0])
             if url.path == "/batch":
                 project = args.get("project", ["Booklists"])[0].strip()
                 if not project or len(project) > 100 or any(ord(c) < 32 for c in project):
@@ -182,17 +225,17 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         raise ValueError("Choose a template or description.")
                 batch = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f") + "-" + uuid.uuid4().hex[:8]
-                (DATA / batch / "uploads").mkdir(parents=True)
-                (DATA / batch / "project.txt").write_text(project, encoding="utf-8")
+                (archive / batch / "uploads").mkdir(parents=True)
+                (archive / batch / "project.txt").write_text(project, encoding="utf-8")
                 if metadata:
-                    (DATA / batch / "format.json").write_text(json.dumps(metadata), encoding="utf-8")
+                    (archive / batch / "format.json").write_text(json.dumps(metadata), encoding="utf-8")
                     if kind == "template":
-                        (DATA / batch / "template.docx").write_bytes(body)
+                        (archive / batch / "template.docx").write_bytes(body)
                 return self.reply({"id": batch})
             batch = args["id"][0]
             if not re.fullmatch(r"[0-9]{20}-[a-f0-9]{8}", batch):
                 raise ValueError("Invalid batch.")
-            job = DATA / batch
+            job = archive / batch
             if not LOCK.acquire(blocking=False):
                 return self.reply({"error": "Another batch is processing."}, 409)
             worker_started = False
@@ -221,9 +264,9 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Add at least one booklist.")
                 # Timestamp publication order, independent of upload start order.
                 final = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f") + "-" + uuid.uuid4().hex[:8]
-                job.rename(DATA / final)
-                STATE = {"phase": "collecting", "project": project_for(DATA / final)}
-                threading.Thread(target=run, args=(final,), daemon=True).start()
+                job.rename(archive / final)
+                STATE = {"owner": archive.name, "phase": "collecting", "project": project_for(archive / final)}
+                threading.Thread(target=run, args=(final, archive), daemon=True).start()
                 worker_started = True
                 self.reply({"ok": True, "batch": final})
             finally:
