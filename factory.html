@@ -9,7 +9,21 @@
 .downloads a{display:inline-block;border-radius:7px;padding:10px 16px;background:var(--green);color:white;font-weight:650;text-decoration:none}
 .downloads a+a{background:#e9f4e4;color:var(--ink)}
 .services{margin-top:18px}.services .row{align-items:baseline}.services .intro{color:#4c6a5b;max-width:70ch}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px}.service{background:white;border:1px solid var(--line);border-radius:16px;padding:20px;position:relative;overflow:hidden}.service::before{content:"";position:absolute;inset:0 auto 0 0;width:5px;background:var(--green)}.service b{display:block;color:var(--green);letter-spacing:.14em;font-size:.75rem}.service h3{margin:10px 0 6px}.service p{color:#456256}@media(max-width:900px){.cards{grid-template-columns:1fr}}
-fieldset{border:1px solid var(--line);border-radius:8px;padding:12px}fieldset label{display:inline-block;margin:4px 16px 4px 0}textarea{width:min(100%,620px);font:inherit;padding:10px}#fileList{width:100%;max-height:260px}#formatForm p{margin:14px 0}#accountForm input{padding:10px;border:1px solid var(--line);border-radius:7px;font:inherit;max-width:100%}#accountForm{margin:16px 0}#fileHistory a{display:inline-block;margin:3px 12px 3px 0}</style>
+fieldset{border:1px solid var(--line);border-radius:8px;padding:12px}fieldset label{display:inline-block;margin:4px 16px 4px 0}textarea{width:min(100%,620px);font:inherit;padding:10px}#fileList{width:100%;max-height:260px}#formatForm p{margin:14px 0}#accountForm input{padding:10px;border:1px solid var(--line);border-radius:7px;font:inherit;max-width:100%}#accountForm{margin:16px 0}#fileHistory a{display:inline-block;margin:3px 12px 3px 0}#dashboard > .floor {
+    min-height: clamp(200px, 25vw, 320px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background-color: #104a38;
+    background-image: linear-gradient(90deg, rgba(7,44,33,.94), rgba(7,44,33,.79) 48%, rgba(7,44,33,.12)), url("https://i.pinimg.com/736x/61/5d/6f/615d6f5dc3de90fa91c52c77a8d22cc9.jpg");
+    background-size: cover;
+    background-position: center 40%;
+}
+@media (max-width: 680px) {
+    #dashboard > .floor { background-position: center 33%; }
+    #dashboard > .floor p { max-width: 68%; }
+}
+</style>
 <svg class="library" xmlns="http://www.w3.org/2000/svg"><defs>
 <symbol id="dock" viewBox="0 0 140 84"><path d="M10 64V35l17-10v10l17-10v10l18-10v39zM16 33V14h8l2 14M21 45h8v8h-8zm17 0h8v8h-8zM68 48h38v18H68zm38 6h13l10 9v3h-23z"/><circle cx="80" cy="71" r="5"/><circle cx="117" cy="71" r="5"/></symbol>
 <symbol id="press" viewBox="0 0 140 84"><path d="M24 71V15h84v56h-9V27H34v44zm25-44h38v12H49zm10 12h18v12H59zm-14 16h46v8H45zM19 72h95M39 66h57"/></symbol>
