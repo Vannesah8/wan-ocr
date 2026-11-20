@@ -1,5 +1,7 @@
 # wan-ocr
 
+wan-ocr is the document processing system. Its first project, **Booklists**, analyses school stationery requests by region, school and grade.
+
 ## Services
 - **Document Analysis** — read every page, surface key facts and totals, and flag anything that needs review.
 - **Document Conversion** — turn scans, images and PDFs into editable Word documents with OCR.
@@ -7,7 +9,7 @@
 
 These three services are shown on the local dashboard.
 
-## Booklist Factory
+## Booklists project
 
 Install and start the local dashboard from this directory.
 

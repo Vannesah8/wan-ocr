@@ -113,7 +113,7 @@ class Handler(BaseHTTPRequestHandler):
             if state.get("project", project) != project:
                 state = {"phase": "idle"}
             self.reply(dict(state=state, bucket=latest, reports=REPORTS,
-                            projects=sorted(set(projects.values()))))
+                            projects=["Booklists", *sorted(set(projects.values()) - {"Booklists"})]))
         elif url.path == "/report":
             query = parse_qs(url.query)
             name = query.get("name", [""])[0]
@@ -196,5 +196,5 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     port = int(os.environ.get("WAN_FACTORY_PORT", "8765"))
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    print(f"Booklist Factory: http://127.0.0.1:{port}", flush=True)
+    print(f"wan-ocr: http://127.0.0.1:{port}", flush=True)
     server.serve_forever()
