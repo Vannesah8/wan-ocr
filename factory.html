@@ -46,7 +46,9 @@ fieldset{border:1px solid var(--line);border-radius:8px;padding:12px}fieldset la
 <p>Enter one category per line. Add matching words after the category name.</p>
 <textarea name="categories" id="categories" required rows="4" placeholder="Finance: invoice, budget&#10;Education: curriculum, classroom"></textarea>
 <fieldset id="compileDocs" hidden><legend>Upload documents to categorise</legend>
-<input type="file" name="documents" multiple required accept=".docx,.pdf,.txt"><button>Check and categorise</button></fieldset></form>
+<label class="pick">Add documents<input id="compilerPicker" type="file" multiple accept=".docx,.pdf,.txt"></label>
+<p id="compilerCount" role="status">Choose one or more documents.</p><ul id="compilerList" class="scroll"></ul>
+<button id="compileStart" disabled>Check and categorise</button></fieldset></form>
 <div id="compileResult" role="status"></div><div id="categoryFiles" class="scroll"></div></section>
 <div id="analysis" hidden>
 <section id="setup" class="panel"><h1 style="font-size:2.3rem">Choose your report format</h1>
@@ -58,7 +60,7 @@ fieldset{border:1px solid var(--line);border-radius:8px;padding:12px}fieldset la
 <p id="sampleBox"><label>Word template (.docx) <input id="sample" type="file" accept=".docx" required></label><br><small>The analysis is appended after your template content.</small></p>
 <p id="briefBox" hidden><label for="brief">Describe the report</label><br><textarea id="brief" rows="4" maxlength="4000" placeholder="Example: Start with school counts and list stationery totals by region."></textarea><br><small>Mention school counts, regional totals and review findings in the order you want them in Word.</small></p>
 <button>Continue to document upload →</button> <span id="formatMessage" role="status"></span></form></section>
-<div id="workflow" hidden><section class="panel intake"><div><h2>Upload booklists</h2><p id="workingProject"></p><p id="queue">Select Booklists with its region folders, or add files for one region.</p></div><div class="actions"><label class="pick">Choose folder<input id="folder" type="file" webkitdirectory multiple></label><label class="pick">Choose files<input id="docs" type="file" accept=".docx" multiple></label><input id="region" type="text" placeholder="Region name" aria-label="Region for selected files" hidden><button id="start" disabled>Start line →</button></div><div class="scroll" id="fileList" hidden></div><span id="msg" role="alert"></span></section>
+<div id="workflow" hidden><section class="panel intake"><div><h2>Upload booklists</h2><p id="workingProject"></p><p id="queue">Select Booklists with its region folders, or add files for one region.</p></div><div class="actions"><label class="pick">Choose folder<input id="folder" type="file" webkitdirectory multiple></label><label class="pick">Add documents<input id="docs" type="file" accept=".docx" multiple></label><input id="region" type="text" placeholder="Region name" aria-label="Region for selected files" hidden><button id="start" disabled>Start line →</button></div><div class="scroll" id="fileList" hidden></div><span id="msg" role="alert"></span></section>
 <section class="floor" id="floor"><div class="top"><h2>Processing line</h2><span id="signal">Ready for intake</span></div><div class="stations" id="stations"></div><p id="next" aria-live="polite">Next step · Load a regional booklist folder.</p></section>
 </div><section class="panel" id="bucket" hidden><div class="row"><h2>Analytics bucket</h2><small id="updated"></small></div><p id="empty">Completed runs collect here. Load your first batch to see regional demand and inspection results.</p><div id="results" hidden><p class="actions downloads"><a id="downloadWord">Download Word summary</a><a id="downloadZip">Download full ZIP</a></p><div class="metrics" id="metrics"></div><div class="row"><h3>Regional demand</h3><label>Region <select id="filter"></select></label></div><div class="scroll" id="demand"></div><details><summary id="checks">Inspection results</summary><div class="scroll" id="issues"></div></details><details><summary>Schools by region</summary><div id="schools"></div></details><details><summary>Download reports and audit files</summary><p class="files" id="reports"></p></details></div></section></div></main>
 <script>
@@ -71,7 +73,7 @@ $('workflow').hidden = true;
 $('project').value = project || 'Booklists';
 if (analysisPage) document.title = (project || 'Analysis') + ' | wan-ocr';
 $('workingProject').textContent = project;
-let files=[],mode='',busy=false,bucket=null,last='',timer;
+let files=[],busy=false,bucket=null,last='',timer;
 const fmt=n=>Number(n).toLocaleString(), node=(tag,text)=>Object.assign(document.createElement(tag),{textContent:text});
 let batchId='', activeRun='', queueRows=[];
 function showQueue(){
@@ -131,7 +133,30 @@ formatForm.onsubmit = async event => {
     }
 };
 function stages(status,active){[...$('stations').children].forEach((s,i)=>{s.className='station '+(i===active?'active':i<active?'done':'');s.lastChild.textContent=status[i]})}
-function selection(which){if(busy)return;if(!batchId){$('msg').textContent='Confirm the report format above to start another batch.';return}mode=which;files=[...$(which).files].filter(f=>/\.docx$/i.test(f.name)&&!f.name.startsWith('~$'));$('region').hidden=which!=='docs';queueRows=files.map(f=>({name:f.webkitRelativePath||f.name,status:'Queued'}));showQueue();$('queue').textContent=files.length+' Word files selected';$('msg').textContent='';$('start').disabled=!files.length;$('next').textContent=which==='folder'?'Next step · Start the line to extract the selected folders.':'Next step · Enter the region and start the line.'}
+function selection(which){
+    if(busy || !batchId){
+        $('msg').textContent='Confirm the report format before adding documents.';
+        return;
+    }
+    const picker=$(which);
+    const existing=new Set(files.map(f=>JSON.stringify([f.webkitRelativePath||f.name,f.size,f.lastModified])));
+    for(const file of picker.files){
+        if(!/\.docx$/i.test(file.name)||file.name.startsWith('~$'))continue;
+        const name=file.webkitRelativePath||file.name;
+        const key=JSON.stringify([name,file.size,file.lastModified]);
+        if(existing.has(key))continue;
+        existing.add(key);
+        files.push(file);
+        queueRows.push({name,status:'Queued'});
+    }
+    picker.value='';
+    $('region').hidden=!files.some(f=>!f.webkitRelativePath);
+    showQueue();
+    $('queue').textContent=files.length+' Word documents queued. Add more or start the line.';
+    $('msg').textContent='';
+    $('start').disabled=!files.length;
+    $('next').textContent=$('region').hidden?'Next step · Start the processing line.':'Next step · Enter the region for individually selected files.';
+}
 $('folder').onchange=()=>selection('folder');$('docs').onchange=()=>selection('docs');
 async function post(route,params={},body){const r=await fetch(route+'?'+new URLSearchParams(params),{method:'POST',headers:{'X-Factory':'1'},body});if(!(r.headers.get('content-type')||'').includes('application/json'))throw Error('The analysis server is unavailable. Open the dashboard served by factory.py.');const j=await r.json();if(!r.ok)throw Error(j.error||'Request failed');return j}
 function table(id,headers,rows){let t=document.createElement('table'),h=t.createTHead().insertRow();headers.forEach(x=>h.append(node('th',x)));let b=t.createTBody();rows.forEach(values=>{let r=b.insertRow();values.forEach(v=>r.append(node('td',v)))});$(id).replaceChildren(t)}
@@ -165,7 +190,10 @@ if(b && activeRun===b.id && b.outcomes){
 if(s.phase==='processing'||s.phase==='collecting'){lock(true);$('signal').textContent='Line running';stages(['Received',s.phase==='processing'?(s.done+1)+' / '+s.total+' files':'Extracted',s.phase==='processing'?'Checking each row':'Compiling outcomes','Collecting'],s.phase==='processing'?1:2);$('next').textContent=s.current?'Processing · '+s.current:'Compiling the analytics bucket…';timer=setTimeout(poll,550);return}
 lock(false);if(s.phase==='error')throw Error(s.message);if(b){$('signal').textContent='Run complete';stages([b.files+' source files','Extraction complete',b.flags+' review flags','Reports ready'],4);$('next').textContent=b.flags||b.duplicates?'Next step · Review inspection findings in the analytics bucket.':'Next step · Explore regional totals or download the reports.'}}
 async function poll(){try{await refresh()}catch(e){lock(false);$('msg').textContent=e.message;$('signal').textContent='Check line status'}}
-$('start').onclick=async()=>{if(busy)return;try{const input=files.map(f=>{const parts=f.webkitRelativePath.split('/');if(mode==='folder'&&parts.length!==3)throw Error('Select the parent Booklists folder containing one subfolder per region.');const region=mode==='folder'?parts[1]:$('region').value.trim();if(!region)throw Error('Enter the region for these files.');return {f,region}});lock(true);clearTimeout(timer);$('msg').textContent='';$('signal').textContent='Receiving files';if(!batchId)throw Error('Save a report format before uploading documents.');for(const [i,{f,region}] of input.entries()){stages([(i+1)+' / '+input.length+' files','Queued','Waiting','Waiting'],0);$('next').textContent='Receiving · '+f.name;const row=queueRows[i];
+$('start').onclick=async()=>{if(busy)return;try{const input=files.map(f=>{const parts=f.webkitRelativePath.split('/');if(f.webkitRelativePath&&parts.length!==3)throw Error('Select the parent Booklists folder containing one subfolder per region.');const region=f.webkitRelativePath?parts[1]:$('region').value.trim();if(!region)throw Error('Enter the region for these files.');return {f,region}});
+const paths=input.map(({f,region})=>region+'/'+f.name.replace(/\.docx$/i,'.docx'));
+if(new Set(paths).size!==paths.length)throw Error('Two selected files have the same name and region. Confirm the format again to start a fresh selection, or rename one source.');
+lock(true);clearTimeout(timer);$('msg').textContent='';$('signal').textContent='Receiving files';if(!batchId)throw Error('Save a report format before uploading documents.');for(const [i,{f,region}] of input.entries()){stages([(i+1)+' / '+input.length+' files','Queued','Waiting','Waiting'],0);$('next').textContent='Receiving · '+f.name;const row=queueRows[i];
 row.path=region+'/'+f.name.replace(/\.docx$/i,'.docx');
 if(row.status==='Uploaded' && row.uploadPath===row.path)continue;
 row.status='Uploading';showQueue();
@@ -186,6 +214,14 @@ $('sourceDoc').onchange=()=>{
     $('convertResult').replaceChildren();
 };
 $('categories').oninput=()=>{$('compileDocs').hidden=!$('categories').value.trim()};
+const compilerFiles=[];
+$('compilerPicker').onchange=()=>{
+    compilerFiles.push(...$('compilerPicker').files);
+    $('compilerPicker').value='';
+    $('compilerCount').textContent=compilerFiles.length+' documents queued. Add more or check the categories.';
+    $('compilerList').replaceChildren(...compilerFiles.map(file=>node('li',file.name)));
+    $('compileStart').disabled=!compilerFiles.length;
+};
 async function submitDocuments(event, route, outputId){
     event.preventDefault();
     const form=event.currentTarget, button=form.querySelector('button'), output=$(outputId);
@@ -194,13 +230,19 @@ async function submitDocuments(event, route, outputId){
     if(route==='/compile')$('categoryFiles').replaceChildren();
     try{
         await ready;
-        const result=await post(route,{},new FormData(form));
+        const payload=new FormData(form);
+        if(route==='/compile'){
+            if(!compilerFiles.length)throw Error('Choose one or more documents.');
+            for(const file of compilerFiles)payload.append('documents',file,file.name);
+            $('compilerPicker').disabled=true;
+        }
+        const result=await post(route,{},payload);
         const link=node('a',route==='/compile'?'Download category folders (ZIP)':'Download '+result.output);
         link.href='/download?'+new URLSearchParams({id:result.id});
         output.replaceChildren(link);
         if(result.entries.length)table('categoryFiles',['Category','File','Check'],result.entries.map(r=>[r.category,r.file,r.reason]));
     }catch(error){output.textContent=error.message}
-    finally{button.disabled=false}
+    finally{button.disabled=false;if(route==='/compile')$('compilerPicker').disabled=false}
 }
 $('convertForm').onsubmit=e=>submitDocuments(e,'/convert','convertResult');
 $('compileForm').onsubmit=e=>submitDocuments(e,'/compile','compileResult');
