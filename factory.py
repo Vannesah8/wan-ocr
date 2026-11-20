@@ -13,6 +13,7 @@ from tempfile import TemporaryDirectory
 from urllib.parse import parse_qs, urlsplit
 
 from booklists import process
+from analysis_exports import WORD, ZIP, export
 
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.environ.get("WAN_FACTORY_DATA", Path.home() / ".wan-booklists")).resolve()
@@ -26,6 +27,11 @@ def published():
     return sorted((p for p in DATA.glob("*/summary.json")), reverse=True)
 
 
+def project_for(job):
+    file = job / "project.txt"
+    return file.read_text(encoding="utf-8") if file.exists() else "Booklists"
+
+
 def records(path):
     with path.open(encoding="utf-8-sig", newline="") as stream:
         yield from csv.DictReader(stream)
@@ -34,10 +40,11 @@ def records(path):
 def run(batch):
     global STATE
     job = DATA / batch
+    project = project_for(job)
     try:
         with TemporaryDirectory(dir=DATA) as tmp:
             root = Path(tmp)
-            for src in [p.parent for p in reversed(published())] + [job]:
+            for src in [p.parent for p in reversed(published()) if project_for(p.parent) == project] + [job]:
                 for file in (src / "uploads").glob("*/*.docx"):
                     target = root / file.relative_to(src / "uploads")
                     target.parent.mkdir(exist_ok=True)
@@ -47,18 +54,18 @@ def run(batch):
 
             def progress(done, total, current):
                 global STATE
-                STATE = dict(phase="processing", done=done, total=total, current=current)
+                STATE = dict(phase="processing", project=project, done=done, total=total, current=current)
 
             output = job / "reports"
             process(root, output, progress_callback=progress)
-            STATE = {"phase": "collecting", "total": files}
+            STATE = {"phase": "collecting", "project": project, "total": files}
             flags = records(output / "flagged.csv")
             first_flags = []
             count = 0
             for count, flag in enumerate(flags, 1):
                 if count <= 25:
                     first_flags.append(flag)
-            summary = dict(id=batch, files=files, date=datetime.now(timezone.utc).isoformat(),
+            summary = dict(id=batch, project=project, files=files, date=datetime.now(timezone.utc).isoformat(),
                            totals=list(records(output / REPORTS[0])), schools=list(records(output / REPORTS[1])),
                            flags=count, preview=first_flags,
                            duplicates=len({r["school_key"] for r in records(output / REPORTS[3])}))
@@ -67,7 +74,7 @@ def run(batch):
             staged.replace(job / "summary.json")
             STATE = {"phase": "complete", "total": files}
     except Exception as exc:
-        STATE = {"phase": "error", "message": str(exc)}
+        STATE = {"phase": "error", "project": project, "message": str(exc)}
         shutil.rmtree(job / "reports", ignore_errors=True)
     finally:
         LOCK.release()
@@ -94,19 +101,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         url = urlsplit(self.path)
-        if url.path == "/":
+        if url.path in ("/", "/analysis"):
             self.send((BASE / "factory.html").read_bytes(), "text/html; charset=utf-8")
         elif url.path == "/state":
             items = published()
-            latest = json.loads(items[0].read_text(encoding="utf-8")) if items else None
-            self.reply(dict(state=STATE, bucket=latest, reports=REPORTS))
+            project = parse_qs(url.query).get("project", ["Booklists"])[0]
+            projects = {p: project_for(p.parent) for p in items}
+            match = next((p for p in items if projects[p] == project), None)
+            latest = json.loads(match.read_text(encoding="utf-8")) if match else None
+            state = STATE
+            if state.get("project", project) != project:
+                state = {"phase": "idle"}
+            self.reply(dict(state=state, bucket=latest, reports=REPORTS,
+                            projects=sorted(set(projects.values()))))
         elif url.path == "/report":
             query = parse_qs(url.query)
             name = query.get("name", [""])[0]
             batch = query.get("id", [""])[0]
-            if name not in REPORTS or not re.fullmatch(r"[0-9]{20}-[a-f0-9]{8}", batch) or not (DATA / batch / "summary.json").is_file():
+            if name not in (*REPORTS, WORD, ZIP) or not re.fullmatch(r"[0-9]{20}-[a-f0-9]{8}", batch) or not (DATA / batch / "summary.json").is_file():
                 return self.send_error(404)
             path = DATA / batch / "reports" / name
+            if name in (WORD, ZIP):
+                path = export(DATA / batch, name, REPORTS)
             self.send_response(200)
             self.send_header("Content-Disposition", f'attachment; filename="{name}"')
             self.send_header("Content-Type", "application/octet-stream")
@@ -126,8 +142,12 @@ class Handler(BaseHTTPRequestHandler):
         args = parse_qs(url.query)
         try:
             if url.path == "/batch":
+                project = args.get("project", ["Booklists"])[0].strip()
+                if not project or len(project) > 100 or any(ord(c) < 32 for c in project):
+                    raise ValueError("Enter a project name of 1 to 100 characters.")
                 batch = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f") + "-" + uuid.uuid4().hex[:8]
                 (DATA / batch / "uploads").mkdir(parents=True)
+                (DATA / batch / "project.txt").write_text(project, encoding="utf-8")
                 return self.reply({"id": batch})
             batch = args["id"][0]
             if not re.fullmatch(r"[0-9]{20}-[a-f0-9]{8}", batch):
@@ -162,7 +182,7 @@ class Handler(BaseHTTPRequestHandler):
                 # Timestamp publication order, independent of upload start order.
                 final = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f") + "-" + uuid.uuid4().hex[:8]
                 job.rename(DATA / final)
-                STATE = {"phase": "collecting"}
+                STATE = {"phase": "collecting", "project": project_for(DATA / final)}
                 threading.Thread(target=run, args=(final,), daemon=True).start()
                 worker_started = True
                 self.reply({"ok": True})
