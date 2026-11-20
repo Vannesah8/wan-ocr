@@ -104,7 +104,7 @@ formatForm.onsubmit = async event => {
             params.name = body.name;
         }
         $('formatMessage').textContent = 'Saving format…';
-        await ready;
+        await ensureWorkspace();
         const batch = await post('/batch',params,body);
         project = selected;
         batchId = batch.id;
@@ -229,7 +229,7 @@ async function submitDocuments(event, route, outputId){
     output.textContent=route==='/compile'?'Checking documents against your categories…':'Converting document…';
     if(route==='/compile')$('categoryFiles').replaceChildren();
     try{
-        await ready;
+        await ensureWorkspace();
         const payload=new FormData(form);
         if(route==='/compile'){
             if(!compilerFiles.length)throw Error('Choose one or more documents.');
@@ -246,12 +246,18 @@ async function submitDocuments(event, route, outputId){
 }
 $('convertForm').onsubmit=e=>submitDocuments(e,'/convert','convertResult');
 $('compileForm').onsubmit=e=>submitDocuments(e,'/compile','compileResult');
-const ready = fetch('/session',{cache:'no-store'}).then(async response=>{
-    if(!response.ok || !(await response.json()).ready)throw Error('Workspace unavailable.');
-});
+let opening;
+function ensureWorkspace(){
+    if (!opening) opening = fetch('/session',{cache:'no-store'}).then(async response=>{
+        const data = await response.json().catch(()=>({}));
+        if(!response.ok || !data.ready) throw Error(data.error || 'The dashboard could not open its Python workspace.');
+    }).catch(error=>{opening=null;throw error});
+    return opening;
+}
 async function openWorkspace(){
     try {
-        await ready;
+        await ensureWorkspace();
+        $('connection').textContent='';
         if(analysisPage) return poll();
         if(page!=='dashboard')return;
         const result = await fetch('/files', {cache:'no-store'});
@@ -272,7 +278,7 @@ async function openWorkspace(){
             }
         });
     } catch(error) {
-        const message = 'The workspace needs the wan-ocr Python server. Open the address printed by factory.py.';
+        const message = error.message || 'Could not open the Python workspace.';
         $('connection').textContent = message;
         $('filesStatus').textContent = 'Files are unavailable.';
     }

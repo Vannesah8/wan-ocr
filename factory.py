@@ -2,6 +2,7 @@
 from io import BytesIO
 from docx import Document
 import sessions
+import hmac
 import secrets
 from http.cookies import SimpleCookie, CookieError
 from document_services import form, process_service
@@ -119,6 +120,13 @@ class Handler(BaseHTTPRequestHandler):
     def reply(self, data, status=200):
         self.send(json.dumps(data).encode(), "application/json", status)
 
+    def trusted_request(self):
+        secret = os.environ.get("WAN_PROXY_SECRET")
+        if secret and not hmac.compare_digest(secret.encode(), self.headers.get("X-Wan-Proxy", "").encode()):
+            self.reply({"error": "Backend connection is not authorised."}, 403)
+            return False
+        return True
+
     def workspace(self, create=False):
         existing = sessions.identify(DATA, sessions.token_from(self.headers))
         if existing:
@@ -138,10 +146,14 @@ class Handler(BaseHTTPRequestHandler):
             archive = DATA / "browsers" / sessions.digest(token).hex()
             archive.mkdir(parents=True)
             self.session_cookie = f"wan_browser={token}; Path=/; Max-Age=31536000; HttpOnly; SameSite=Strict"
+            if os.environ.get("WAN_PROXY_SECRET"):
+                self.session_cookie += "; Secure"
             return archive
         return None
 
     def do_GET(self):
+        if not self.trusted_request():
+            return
         url = urlsplit(self.path)
         if url.path in ("/", "/analysis", "/conversion", "/compiler"):
             self.send((BASE / "factory.html").read_bytes(), "text/html; charset=utf-8")
@@ -207,8 +219,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global STATE
+        if not self.trusted_request():
+            return
         # Only same-origin dashboard requests may write to the local archive.
-        if self.headers.get("Origin") != f"http://127.0.0.1:{self.server.server_port}" or self.headers.get("X-Factory") != "1":
+        local = urlsplit(self.headers.get("Origin", ""))
+        local_ok = local.scheme == "http" and local.netloc in {
+            f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"}
+        # In proxy mode the authenticated Worker already checked the browser's exact origin.
+        if (not os.environ.get("WAN_PROXY_SECRET") and not local_ok) or self.headers.get("X-Factory") != "1":
             return self.send_error(403)
         url = urlsplit(self.path)
         args = parse_qs(url.query)
@@ -303,7 +321,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("WAN_FACTORY_PORT", "8765"))
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    port = int(os.environ.get("WAN_FACTORY_PORT") or os.environ.get("PORT", "8765"))
+    host = "0.0.0.0" if os.environ.get("WAN_PROXY_SECRET") else "127.0.0.1"
+    server = ThreadingHTTPServer((host, port), Handler)
     print(f"wan-ocr: http://127.0.0.1:{port}", flush=True)
     server.serve_forever()
