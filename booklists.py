@@ -134,7 +134,7 @@ are held for review to prevent double counting. Absent columns do not imply zero
 """
 
 
-def process(root, output, region=None, limit=None, mapping=None):
+def process(root, output, region=None, limit=None, mapping=None, progress_callback=None):
     reviewed = load_mapping(mapping)
     files = sorted(p for p in root.glob("*/*") if p.is_file() and p.suffix.lower() == ".docx"
                    and not p.name.startswith("~$") and (region is None or p.parent.name == region))
@@ -161,7 +161,9 @@ def process(root, output, region=None, limit=None, mapping=None):
         long = writer("long.csv", CELL)
         blank = writer("blanks.csv", CELL)
         flag = writer("flagged.csv", LOC + ["column", "original_text", "reason"])
-        for path in files:
+        for index, path in enumerate(files):
+            if progress_callback:
+                progress_callback(index, len(files), path.relative_to(root).as_posix())
             folder = path.parent.name
             rel = path.relative_to(root).as_posix()
             stat = progress[folder]
