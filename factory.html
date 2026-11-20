@@ -8,6 +8,7 @@
 #setup form{margin-top:14px}
 .downloads a{display:inline-block;border-radius:7px;padding:10px 16px;background:var(--green);color:white;font-weight:650;text-decoration:none}
 .downloads a+a{background:#e9f4e4;color:var(--ink)}
+.services{margin-top:18px}.services .row{align-items:baseline}.services .intro{color:#4c6a5b;max-width:70ch}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px}.service{background:white;border:1px solid var(--line);border-radius:16px;padding:20px;position:relative;overflow:hidden}.service::before{content:"";position:absolute;inset:0 auto 0 0;width:5px;background:var(--green)}.service b{display:block;color:var(--green);letter-spacing:.14em;font-size:.75rem}.service h3{margin:10px 0 6px}.service p{color:#456256}@media(max-width:900px){.cards{grid-template-columns:1fr}}
 </style>
 <svg class="library" xmlns="http://www.w3.org/2000/svg"><defs>
 <symbol id="dock" viewBox="0 0 140 84"><path d="M10 64V35l17-10v10l17-10v10l18-10v39zM16 33V14h8l2 14M21 45h8v8h-8zm17 0h8v8h-8zM68 48h38v18H68zm38 6h13l10 9v3h-23z"/><circle cx="80" cy="71" r="5"/><circle cx="117" cy="71" r="5"/></symbol>
@@ -16,7 +17,8 @@
 <symbol id="silo" viewBox="0 0 140 84"><ellipse cx="71" cy="19" rx="36" ry="10"/><path d="M35 19v35q0 10 36 11t36-11V19M37 53q33 15 68 0M40 60v13m60-13v13M49 28v22m43-22v22M62 65v8h18v-8"/></symbol>
 </defs></svg>
 <header><strong>WAN / OCR</strong><nav><a href="/">Dashboard</a> &nbsp; / &nbsp; <a href="/analysis">ANALYSIS</a></nav></header><main>
-<section id="dashboard" class="floor"><h1>Booklist Factory</h1><p>Turn regional school booklists into a project report.</p><a class="launch" href="/analysis">ANALYSIS →</a></section>
+<div id="dashboard"><section class="floor"><h1>Booklist Factory</h1><p>Turn regional school booklists into a project report.</p><a class="launch" href="/analysis">ANALYSIS →</a></section>
+<section class="services" id="services" aria-labelledby="services-title"><div class="row"><h2 id="services-title">Our services</h2><p class="intro">Three ways WAN OCR turns documents into usable work.</p></div><div class="cards"><article class="service"><b>01 / ANALYSIS</b><h3>Document Analysis</h3><p>Read every page, surface key facts and totals, and flag anything that needs a closer look.</p></article><article class="service"><b>02 / CONVERSION</b><h3>Document Conversion</h3><p>Convert scans, images and PDFs into clean, editable Word documents with OCR.</p></article><article class="service"><b>03 / COMPILING</b><h3>Document Compiler</h3><p>Collect many documents into one structured, cumulative report you can audit and download.</p></article></div></section></div>
 <div id="analysis" hidden>
 <section id="setup" class="panel"><h1 style="font-size:2.3rem">Project setup</h1>
 <p>Enter a new project name or select an existing project to continue its analysis.</p>

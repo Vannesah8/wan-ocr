@@ -1,5 +1,12 @@
 # wan-ocr
 
+## Services
+- **Document Analysis** — read every page, surface key facts and totals, and flag anything that needs review.
+- **Document Conversion** — turn scans, images and PDFs into editable Word documents with OCR.
+- **Document Compiler** — collect many documents into one structured, cumulative, auditable report.
+
+These three services are shown on the local dashboard.
+
 ## Booklist Factory
 
 Install and start the local dashboard from this directory.
