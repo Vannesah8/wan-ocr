@@ -60,7 +60,7 @@ fieldset{border:1px solid var(--line);border-radius:8px;padding:12px}fieldset la
 <p id="sampleBox"><label>Word template (.docx) <input id="sample" type="file" accept=".docx" required></label><br><small>The analysis is appended after your template content.</small></p>
 <p id="briefBox" hidden><label for="brief">Describe the report</label><br><textarea id="brief" rows="4" maxlength="4000" placeholder="Example: Start with school counts and list stationery totals by region."></textarea><br><small>Mention school counts, regional totals and review findings in the order you want them in Word.</small></p>
 <button>Continue to document upload →</button> <span id="formatMessage" role="status"></span></form></section>
-<div id="workflow" hidden><section class="panel intake"><div><h2>Upload booklists</h2><p id="workingProject"></p><p id="queue">Select Booklists with its region folders, or add files for one region.</p></div><div class="actions"><label class="pick">Choose folder<input id="folder" type="file" webkitdirectory multiple></label><label class="pick">Add documents<input id="docs" type="file" accept=".docx" multiple></label><input id="region" type="text" placeholder="Region name" aria-label="Region for selected files" hidden><button id="start" disabled>Start line →</button></div><div class="scroll" id="fileList" hidden></div><span id="msg" role="alert"></span></section>
+<div id="workflow" hidden><section class="panel intake"><div><h2>Upload booklists</h2><p id="workingProject"></p><p id="queue">Select Booklists with its region folders, or add files for one region.</p></div><div class="actions"><label class="pick">Choose folder<input id="folder" type="file" webkitdirectory multiple></label><label class="pick">Add documents<input id="docs" type="file" accept=".docx,.pdf" multiple></label><input id="region" type="text" placeholder="Region name" aria-label="Region for selected files" hidden><button id="start" disabled>Start line →</button></div><div class="scroll" id="fileList" hidden></div><span id="msg" role="alert"></span></section>
 <section class="floor" id="floor"><div class="top"><h2>Processing line</h2><span id="signal">Ready for intake</span></div><div class="stations" id="stations"></div><p id="next" aria-live="polite">Next step · Load a regional booklist folder.</p></section>
 </div><section class="panel" id="bucket" hidden><div class="row"><h2>Analytics bucket</h2><small id="updated"></small></div><p id="empty">Completed runs collect here. Load your first batch to see regional demand and inspection results.</p><div id="results" hidden><p class="actions downloads"><a id="downloadExcel">Download reporting workbook</a><a id="downloadWord">Download Word summary</a><a id="downloadZip">Download full ZIP</a></p><div class="metrics" id="metrics"></div><div class="row"><h3>Regional demand</h3><label>Region <select id="filter"></select></label></div><div class="scroll" id="demand"></div><details><summary id="checks">Inspection results</summary><div class="scroll" id="issues"></div></details><details><summary>Schools by region</summary><div id="schools"></div></details><details><summary>Download reports and audit files</summary><p class="files" id="reports"></p></details></div></section></div></main>
 <script>
@@ -141,7 +141,7 @@ function selection(which){
     const picker=$(which);
     const existing=new Set(files.map(f=>JSON.stringify([f.webkitRelativePath||f.name,f.size,f.lastModified])));
     for(const file of picker.files){
-        if(!/\.docx$/i.test(file.name)||file.name.startsWith('~$'))continue;
+        if(!/\.(docx|pdf)$/i.test(file.name)||file.name.startsWith('~$'))continue;
         const name=file.webkitRelativePath||file.name;
         const key=JSON.stringify([name,file.size,file.lastModified]);
         if(existing.has(key))continue;
@@ -152,7 +152,7 @@ function selection(which){
     picker.value='';
     $('region').hidden=!files.some(f=>!f.webkitRelativePath);
     showQueue();
-    $('queue').textContent=files.length+' Word documents queued. Add more or start the line.';
+    $('queue').textContent=files.length+' documents queued. Add more or start the line.';
     $('msg').textContent='';
     $('start').disabled=!files.length;
     $('next').textContent=$('region').hidden?'Next step · Start the processing line.':'Next step · Enter the region for individually selected files.';
@@ -191,10 +191,10 @@ if(s.phase==='processing'||s.phase==='collecting'){lock(true);$('signal').textCo
 lock(false);if(s.phase==='error')throw Error(s.message);if(b){$('signal').textContent='Run complete';stages([b.files+' source files','Extraction complete',b.flags+' review flags','Reports ready'],4);$('next').textContent=b.flags||b.duplicates?'Next step · Review inspection findings in the analytics bucket.':'Next step · Explore regional totals or download the reports.'}}
 async function poll(){try{await refresh()}catch(e){lock(false);$('msg').textContent=e.message;$('signal').textContent='Check line status'}}
 $('start').onclick=async()=>{if(busy)return;try{const input=files.map(f=>{const parts=f.webkitRelativePath.split('/');if(f.webkitRelativePath&&parts.length!==3)throw Error('Select the parent Booklists folder containing one subfolder per region.');const region=f.webkitRelativePath?parts[1]:$('region').value.trim();if(!region)throw Error('Enter the region for these files.');return {f,region}});
-const paths=input.map(({f,region})=>region+'/'+f.name.replace(/\.docx$/i,'.docx'));
+const paths=input.map(({f,region})=>region+'/'+f.name.replace(/\.(docx|pdf)$/i,'.docx'));
 if(new Set(paths).size!==paths.length)throw Error('Two selected files have the same name and region. Confirm the format again to start a fresh selection, or rename one source.');
 lock(true);clearTimeout(timer);$('msg').textContent='';$('signal').textContent='Receiving files';if(!batchId)throw Error('Save a report format before uploading documents.');for(const [i,{f,region}] of input.entries()){stages([(i+1)+' / '+input.length+' files','Queued','Waiting','Waiting'],0);$('next').textContent='Receiving · '+f.name;const row=queueRows[i];
-row.path=region+'/'+f.name.replace(/\.docx$/i,'.docx');
+row.path=region+'/'+f.name.replace(/\.(docx|pdf)$/i,'.docx');
 if(row.status==='Uploaded' && row.uploadPath===row.path)continue;
 row.status='Uploading';showQueue();
 try {await post('/upload',{id:batchId,region,name:f.name},f);}

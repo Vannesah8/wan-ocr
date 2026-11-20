@@ -99,7 +99,7 @@ to your own server that calls the Anthropic API.
 
 ### Analysis workspace
 
-On the local dashboard, open **ANALYSIS**. Enter a project name (or select a previous project) and open it. Upload the regional folder or individual .docx files, then start the processing line. Each project accumulates its own submissions. Earlier runs created before project setup are available under **Booklists**.
+On the local dashboard, open **ANALYSIS**. Enter a project name (or select a previous project) and open it. Upload the regional folder or individual Word (.docx) and PDF files, then start the processing line. Text-based PDF tables are converted into Word tables before inspection; scanned PDFs need OCR first. Each project accumulates its own submissions. Earlier runs created before project setup are available under **Booklists**.
 
 The final **Analytics bucket** offers a Word summary with school counts, quantities by region and product, and review counts. **Download full ZIP** includes that summary and all ten audit and report files. Both exports cover the whole project, including when the dashboard table is filtered to one region.
 

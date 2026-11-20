@@ -39,6 +39,29 @@ def project_for(job):
     return file.read_text(encoding="utf-8") if file.exists() else "Booklists"
 
 
+def pdf_tables_as_docx(data):
+    """Turn text-based PDF tables into a Word document the booklist parser can read."""
+    import pymupdf
+    doc = Document()
+    found = 0
+    with pymupdf.open(stream=data, filetype="pdf") as pdf:
+        for page in pdf:
+            for table in page.find_tables().tables:
+                rows = [[str(cell or "") for cell in row] for row in table.extract()]
+                if not rows:
+                    continue
+                word_table = doc.add_table(rows=len(rows), cols=max(len(row) for row in rows))
+                for r, row in enumerate(rows):
+                    for c, value in enumerate(row):
+                        word_table.cell(r, c).text = value
+                found += 1
+    if not found:
+        raise ValueError("This PDF has no readable tables. Use a Word booklist or a text-based PDF with tables.")
+    out = BytesIO()
+    doc.save(out)
+    return out.getvalue()
+
+
 def records(path):
     with path.open(encoding="utf-8-sig", newline="") as stream:
         yield from csv.DictReader(stream)
@@ -289,20 +312,31 @@ class Handler(BaseHTTPRequestHandler):
                 if url.path == "/upload":
                     region = part(args["region"][0])
                     name = part(args["name"][0])
-                    if not name.lower().endswith(".docx") or name.startswith("~$"):
-                        raise ValueError("Choose a Word booklist.")
-                    target = job / "uploads" / region / (name[:-5] + ".docx")
-                    target.parent.mkdir(exist_ok=True)
+                    ext = Path(name).suffix.lower()
+                    if ext not in (".docx", ".pdf") or name.startswith("~$"):
+                        raise ValueError("Choose a Word or PDF booklist.")
                     size = int(self.headers.get("Content-Length", -1))
                     if size < 1 or size > 128 * 1024 * 1024:
                         raise ValueError("Each document must be between 1 byte and 128 MB.")
+                    chunks, remaining = [], size
+                    while remaining:
+                        chunk = self.rfile.read(min(remaining, 65536))
+                        if not chunk:
+                            raise ValueError("Incomplete upload.")
+                        chunks.append(chunk)
+                        remaining -= len(chunk)
+                    data = b"".join(chunks)
+                    if ext == ".pdf":
+                        try:
+                            data = pdf_tables_as_docx(data)
+                        except ValueError:
+                            raise
+                        except Exception as exc:
+                            raise ValueError("This PDF could not be read as a booklist.") from exc
+                    target = job / "uploads" / region / (Path(name).stem + ".docx")
+                    target.parent.mkdir(exist_ok=True)
                     with target.open("xb") as stream:
-                        while size:
-                            chunk = self.rfile.read(min(size, 65536))
-                            if not chunk:
-                                raise ValueError("Incomplete upload.")
-                            stream.write(chunk)
-                            size -= len(chunk)
+                        stream.write(data)
                     return self.reply({"ok": True})
                 if url.path != "/run" or not any((job / "uploads").glob("*/*.docx")):
                     raise ValueError("Add at least one booklist.")
