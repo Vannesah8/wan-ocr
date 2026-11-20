@@ -1,4 +1,6 @@
 """Local desktop dashboard. Run python factory.py and open the printed URL."""
+from io import BytesIO
+from docx import Document
 import csv
 import json
 import os
@@ -50,25 +52,33 @@ def run(batch):
                     target.parent.mkdir(exist_ok=True)
                     target.unlink(missing_ok=True)
                     os.link(file, target)
-            files = sum(1 for _ in root.glob("*/*.docx"))
+            sources = sorted(p.relative_to(root).as_posix() for p in root.glob("*/*.docx"))
+            files = len(sources)
 
             def progress(done, total, current):
                 global STATE
-                STATE = dict(phase="processing", project=project, done=done, total=total, current=current)
+                STATE = dict(phase="processing", project=project, done=done, total=total, current=current, sources=sources, batch=batch)
 
             output = job / "reports"
             process(root, output, progress_callback=progress)
             STATE = {"phase": "collecting", "project": project, "total": files}
             flags = records(output / "flagged.csv")
             first_flags = []
+            flagged_sources = set()
             count = 0
             for count, flag in enumerate(flags, 1):
+                flagged_sources.add(flag["source_file"])
                 if count <= 25:
                     first_flags.append(flag)
             summary = dict(id=batch, project=project, files=files, date=datetime.now(timezone.utc).isoformat(),
                            totals=list(records(output / REPORTS[0])), schools=list(records(output / REPORTS[1])),
                            flags=count, preview=first_flags,
                            duplicates=len({r["school_key"] for r in records(output / REPORTS[3])}))
+            summary["outcomes"] = {name: "Needs review" if name in flagged_sources else "Complete"
+                                   for name in sources}
+            format_path = job / "format.json"
+            if format_path.exists():
+                summary["format"] = json.loads(format_path.read_text(encoding="utf-8"))
             staged = job / "pending.json"
             staged.write_text(json.dumps(summary), encoding="utf-8")
             staged.replace(job / "summary.json")
@@ -145,9 +155,39 @@ class Handler(BaseHTTPRequestHandler):
                 project = args.get("project", ["Booklists"])[0].strip()
                 if not project or len(project) > 100 or any(ord(c) < 32 for c in project):
                     raise ValueError("Enter a project name of 1 to 100 characters.")
+                kind = args.get("format", [""])[0]
+                metadata = {}
+                if kind:
+                    size = int(self.headers.get("Content-Length", 0))
+                    limit = 16 * 1024 * 1024 if kind == "template" else 16000
+                    if not 0 < size <= limit:
+                        raise ValueError("Choose a template up to 16 MB or enter a shorter description.")
+                    body = self.rfile.read(size)
+                    if len(body) != size:
+                        raise ValueError("Incomplete format upload.")
+                    if kind == "template":
+                        filename = part(args["name"][0])
+                        if not filename.lower().endswith(".docx"):
+                            raise ValueError("Choose a .docx report template.")
+                        try:
+                            Document(BytesIO(body))
+                        except Exception as exc:
+                            raise ValueError("This template could not be opened as a Word document.") from exc
+                        metadata = {"template": filename}
+                    elif kind == "description":
+                        description = body.decode("utf-8").strip()
+                        if not description or any(ord(c) < 32 and c not in "\t\n\r" for c in description):
+                            raise ValueError("Enter a readable format description.")
+                        metadata = {"description": description}
+                    else:
+                        raise ValueError("Choose a template or description.")
                 batch = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f") + "-" + uuid.uuid4().hex[:8]
                 (DATA / batch / "uploads").mkdir(parents=True)
                 (DATA / batch / "project.txt").write_text(project, encoding="utf-8")
+                if metadata:
+                    (DATA / batch / "format.json").write_text(json.dumps(metadata), encoding="utf-8")
+                    if kind == "template":
+                        (DATA / batch / "template.docx").write_bytes(body)
                 return self.reply({"id": batch})
             batch = args["id"][0]
             if not re.fullmatch(r"[0-9]{20}-[a-f0-9]{8}", batch):
@@ -185,7 +225,7 @@ class Handler(BaseHTTPRequestHandler):
                 STATE = {"phase": "collecting", "project": project_for(DATA / final)}
                 threading.Thread(target=run, args=(final,), daemon=True).start()
                 worker_started = True
-                self.reply({"ok": True})
+                self.reply({"ok": True, "batch": final})
             finally:
                 if not worker_started:
                     LOCK.release()
