@@ -78,7 +78,7 @@ const fmt=n=>Number(n).toLocaleString(), node=(tag,text)=>Object.assign(document
 let batchId='', activeRun='', queueRows=[];
 function showQueue(){
     $('fileList').hidden = !queueRows.length;
-    table('fileList',['Document','Stage'],queueRows.map(row=>[row.name,row.status]));
+    table('fileList',['Document','Stage'],queueRows.map(row=>[row.name,row.error ? row.status+" · "+row.error : row.status]));
 }
 const formatForm = $('formatForm');
 formatForm.onchange = () => {
@@ -178,13 +178,16 @@ render(b,reports);
 if(s.batch===activeRun && s.sources){
     const order=new Map(s.sources.map((path,i)=>[path,i]));
     for(const row of queueRows){
+        if(row.error || !order.has(row.path))continue;
         const pos=order.get(row.path);
         row.status=pos<s.done?'Inspected':pos===s.done?'Processing':'Uploaded';
     }
     showQueue();
 }
 if(b && activeRun===b.id && b.outcomes){
-    queueRows.forEach(row=>row.status=b.outcomes[row.path]||'Processed');
+    for(const row of queueRows){
+        if(!row.error)row.status=b.outcomes[row.path]||'Processed';
+    }
     showQueue();
 }
 if(s.phase==='processing'||s.phase==='collecting'){lock(true);$('signal').textContent='Line running';stages(['Received',s.phase==='processing'?(s.done+1)+' / '+s.total+' files':'Extracted',s.phase==='processing'?'Checking each row':'Compiling outcomes','Collecting'],s.phase==='processing'?1:2);$('next').textContent=s.current?'Processing · '+s.current:'Compiling the analytics bucket…';timer=setTimeout(poll,550);return}
@@ -196,10 +199,30 @@ if(new Set(paths).size!==paths.length)throw Error('Two selected files have the s
 lock(true);clearTimeout(timer);$('msg').textContent='';$('signal').textContent='Receiving files';if(!batchId)throw Error('Save a report format before uploading documents.');for(const [i,{f,region}] of input.entries()){stages([(i+1)+' / '+input.length+' files','Queued','Waiting','Waiting'],0);$('next').textContent='Receiving · '+f.name;const row=queueRows[i];
 row.path=region+'/'+f.name.replace(/\.(docx|pdf)$/i,'.docx');
 if(row.status==='Uploaded' && row.uploadPath===row.path)continue;
-row.status='Uploading';showQueue();
-try {await post('/upload',{id:batchId,region,name:f.name},f);}
-catch(error){row.status='Upload failed';showQueue();throw error}
-row.uploadPath=row.path;row.status='Uploaded';showQueue()}activeRun=(await post('/run',{id:batchId})).batch;batchId='';files=[];$('docs').value='';$('folder').value='';$('queue').textContent='Batch received. Add another batch after this run.';await poll()}catch(e){lock(false);$('msg').textContent=e.message;$('signal').textContent='Intake needs attention'}};
+row.error='';
+row.status='Uploading';
+showQueue();
+try {
+    await post('/upload',{id:batchId,region,name:f.name},f);
+    row.uploadPath=row.path;
+    row.status='Uploaded';
+} catch(error) {
+    row.status='Upload failed';
+    row.error=error.message || 'Upload unavailable';
+}
+showQueue();
+}
+const uploaded=queueRows.filter(row=>row.status==='Uploaded').length;
+const failed=input.length-uploaded;
+$('queue').textContent=uploaded+' uploaded · '+failed+' failed';
+if(!uploaded)throw Error('No documents uploaded. Review the file list and retry.');
+activeRun=(await post('/run',{id:batchId})).batch;
+batchId='';
+files=[];
+$('docs').value='';
+$('folder').value='';
+await poll();
+}catch(e){lock(false);$('msg').textContent=e.message;$('signal').textContent='Intake needs attention'}};
 const page = location.pathname.slice(1) || 'dashboard';
 for(const id of ['dashboard','analysis','conversion','compiler']){
     $(id).hidden = id !== page;
