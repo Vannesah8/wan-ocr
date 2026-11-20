@@ -19,7 +19,7 @@ from tempfile import TemporaryDirectory
 from urllib.parse import parse_qs, urlsplit
 
 from booklists import process
-from analysis_exports import WORD, ZIP, export
+from analysis_exports import EXCEL, WORD, ZIP, export
 
 BASE = Path(__file__).resolve().parent
 DATA = Path(os.environ.get("WAN_FACTORY_DATA", Path.home() / ".wan-booklists")).resolve()
@@ -190,10 +190,10 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(url.query)
             name = query.get("name", [""])[0]
             batch = query.get("id", [""])[0]
-            if name not in (*REPORTS, WORD, ZIP) or not re.fullmatch(r"[0-9]{20}-[a-f0-9]{8}", batch) or not (archive / batch / "summary.json").is_file():
+            if name not in (*REPORTS, EXCEL, WORD, ZIP) or not re.fullmatch(r"[0-9]{20}-[a-f0-9]{8}", batch) or not (archive / batch / "summary.json").is_file():
                 return self.send_error(404)
             path = archive / batch / "reports" / name
-            if name in (WORD, ZIP):
+            if name in (EXCEL, WORD, ZIP):
                 path = export(archive / batch, name, REPORTS)
             self.send_response(200)
             self.send_header("Content-Disposition", f'attachment; filename="{name}"')

@@ -8,6 +8,9 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from docx import Document
 
+from reporting_workbook import write_workbook
+
+EXCEL = "booklists-reporting.xlsx"
 WORD = "analysis-summary.docx"
 ZIP = "analysis-bucket.zip"
 
@@ -58,7 +61,11 @@ def export(job, name, reports):
     """Write on disk so large ZIP downloads need no in-memory copy."""
     output = job / "reports"
     target = output / name
-    if target.exists():
+    if target.exists() and name == ZIP:
+        with ZipFile(target) as existing:
+            if EXCEL in existing.namelist():
+                return target
+    elif target.exists():
         return target
     with tempfile.NamedTemporaryFile(dir=output, delete=False) as temp:
         staged = Path(temp.name)
@@ -67,10 +74,12 @@ def export(job, name, reports):
             template = job / "template.docx"
             make_summary(json.loads((job / "summary.json").read_text(encoding="utf-8")), staged,
                          template if template.exists() else None)
+        elif name == EXCEL:
+            write_workbook(output / "booklists_wide.csv", staged)
         elif name == ZIP:
             word = export(job, WORD, reports)
             with ZipFile(staged, "w", ZIP_DEFLATED) as archive:
-                for path in [word, *(output / item for item in reports)]:
+                for path in [word, export(job, EXCEL, reports), *(output / item for item in reports)]:
                     archive.write(path, path.name)
         else:
             raise ValueError("Unknown export.")

@@ -62,7 +62,7 @@ fieldset{border:1px solid var(--line);border-radius:8px;padding:12px}fieldset la
 <button>Continue to document upload →</button> <span id="formatMessage" role="status"></span></form></section>
 <div id="workflow" hidden><section class="panel intake"><div><h2>Upload booklists</h2><p id="workingProject"></p><p id="queue">Select Booklists with its region folders, or add files for one region.</p></div><div class="actions"><label class="pick">Choose folder<input id="folder" type="file" webkitdirectory multiple></label><label class="pick">Add documents<input id="docs" type="file" accept=".docx" multiple></label><input id="region" type="text" placeholder="Region name" aria-label="Region for selected files" hidden><button id="start" disabled>Start line →</button></div><div class="scroll" id="fileList" hidden></div><span id="msg" role="alert"></span></section>
 <section class="floor" id="floor"><div class="top"><h2>Processing line</h2><span id="signal">Ready for intake</span></div><div class="stations" id="stations"></div><p id="next" aria-live="polite">Next step · Load a regional booklist folder.</p></section>
-</div><section class="panel" id="bucket" hidden><div class="row"><h2>Analytics bucket</h2><small id="updated"></small></div><p id="empty">Completed runs collect here. Load your first batch to see regional demand and inspection results.</p><div id="results" hidden><p class="actions downloads"><a id="downloadWord">Download Word summary</a><a id="downloadZip">Download full ZIP</a></p><div class="metrics" id="metrics"></div><div class="row"><h3>Regional demand</h3><label>Region <select id="filter"></select></label></div><div class="scroll" id="demand"></div><details><summary id="checks">Inspection results</summary><div class="scroll" id="issues"></div></details><details><summary>Schools by region</summary><div id="schools"></div></details><details><summary>Download reports and audit files</summary><p class="files" id="reports"></p></details></div></section></div></main>
+</div><section class="panel" id="bucket" hidden><div class="row"><h2>Analytics bucket</h2><small id="updated"></small></div><p id="empty">Completed runs collect here. Load your first batch to see regional demand and inspection results.</p><div id="results" hidden><p class="actions downloads"><a id="downloadExcel">Download reporting workbook</a><a id="downloadWord">Download Word summary</a><a id="downloadZip">Download full ZIP</a></p><div class="metrics" id="metrics"></div><div class="row"><h3>Regional demand</h3><label>Region <select id="filter"></select></label></div><div class="scroll" id="demand"></div><details><summary id="checks">Inspection results</summary><div class="scroll" id="issues"></div></details><details><summary>Schools by region</summary><div id="schools"></div></details><details><summary>Download reports and audit files</summary><p class="files" id="reports"></p></details></div></section></div></main>
 <script>
 const $=id=>document.getElementById(id), labels=['Intake dock','Extraction press','Inspection bay','Analytics bucket'],icons=['dock','press','inspect','silo'];
 $('stations').innerHTML=labels.map((label,i)=>'<div class="station"><svg aria-hidden="true"><use href="#'+icons[i]+'"/></svg><div class="belt"></div><b>'+label+'</b><small>Waiting</small></div>').join('');
@@ -163,7 +163,7 @@ function table(id,headers,rows){let t=document.createElement('table'),h=t.create
 function demand(){const region=$('filter').value;table('demand',['Region','Product','Known units','Excluded cells'],bucket.totals.filter(r=>!region||r.region===region).map(r=>[r.region,r.standard_product,r.known_units===''?'Unresolved':fmt(r.known_units),r.excluded_cells]))}
 $('filter').onchange=demand;
 function render(b,reports){if(!b||last===b.id)return;bucket=b;last=b.id;
-for (const [id,name] of [['downloadWord','analysis-summary.docx'],['downloadZip','analysis-bucket.zip']]) {
+for (const [id,name] of [['downloadExcel','booklists-reporting.xlsx'],['downloadWord','analysis-summary.docx'],['downloadZip','analysis-bucket.zip']]) {
     $(id).href='/report?'+new URLSearchParams({id:b.id,name});
 }
 $('empty').hidden=true;$('results').hidden=false;$('updated').textContent='Updated '+new Date(b.date).toLocaleString();$('metrics').replaceChildren();for(const [label,value] of [['Source files',b.files],['Regions',b.schools.length],['Known units',b.totals.length&&b.totals.some(r=>r.known_units!=='')?fmt(b.totals.reduce((s,r)=>s+Number(r.known_units),0)):'—'],['Review flags',b.flags]]){let d=node('div',label);d.className='metric';d.append(node('b',value));$('metrics').append(d)}
@@ -265,7 +265,7 @@ async function openWorkspace(){
         files.forEach((file,i)=>{
             const cell = rows[i].lastElementChild;
             if(file.output){const link=node('a',file.output);link.href='/download?'+new URLSearchParams({id:file.id});cell.append(link);return}
-            for(const [label,name] of [['Word summary','analysis-summary.docx'],['Full ZIP','analysis-bucket.zip']]){
+            for(const [label,name] of [['Excel workbook','booklists-reporting.xlsx'],['Word summary','analysis-summary.docx'],['Full ZIP','analysis-bucket.zip']]){
                 const link = node('a',label);
                 link.href = '/report?'+new URLSearchParams({id:file.id,name});
                 cell.append(link,'  ');

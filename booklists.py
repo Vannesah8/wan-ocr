@@ -126,7 +126,7 @@ Whitespace-only product cells count as zero and are logged. Whole numbers and ex
 units count as individual items. Dozens multiply by 12. Packs require an explicit
 positive size in the cell. Rates, ranges, unknown pack sizes and other unresolved text
 are flagged and excluded. The wide CSV follows the supplied 50-column order. Header mismatches are held for review.
-The final column labelled "51" is preserved verbatim; nonblank entries are flagged. Graph Books is counted without a brand.
+The sample shows a first-row total in AX2. Extra source values in AX are logged separately. Graph Books is counted without a brand.
 Empty totals mean no eligible resolved cells for that group.
 Product names retain model, colour and brand. Only case, spacing, the specified palette
 typo and exact reviewed overrides are combined. Repeated standard columns within a row
@@ -195,8 +195,11 @@ def process(root, output, region=None, limit=None, mapping=None, progress_callba
                     header_like = [key(v) for v in texts[:4]] == [key(v) for v in IDS]
                     if header_like:
                         headers = None
-                        if regular and len(texts) == len(REQUIRED) and key(texts[-1]) == "51":
-                            originals = texts[4:-1]
+                        product_end = len(IDS) + len(PRODUCTS)
+                        extra_total = len(texts) == product_end + 1 and (
+                            not key(texts[-1]) or key(texts[-1]).isdigit())
+                        if regular and (len(texts) == product_end or extra_total):
+                            originals = texts[4:product_end]
                             names = [standard_name(v, reviewed, spelling) for v in originals]
                             expected = [standard_name(v, reviewed, spelling) for v in PRODUCTS]
                             if list(map(key, names)) == list(map(key, expected)):
@@ -209,7 +212,7 @@ def process(root, output, region=None, limit=None, mapping=None, progress_callba
                         stat["rows_flagged"] += 1
                         stat["layout_issues"] += 1
                         continue
-                    wide(texts)
+                    wide(texts if len(texts) == len(REQUIRED) else [*texts, ""])
                     stat["data_rows"] += 1
                     reg, ba, school, grade = texts[:4]
                     school_key = key(school)
@@ -225,8 +228,8 @@ def process(root, output, region=None, limit=None, mapping=None, progress_callba
                     if issues:
                         flag(loc + ["", original, ", ".join(issues)])
                     row_flagged = bool(issues)
-                    if clean(texts[-1]):
-                        flag(loc + [len(headers), texts[-1], "column 51: meaning unconfirmed"])
+                    if len(texts) == len(REQUIRED) and clean(texts[-1]):
+                        flag(loc + [len(headers), texts[-1], "extra value outside product columns; check source"])
                         row_flagged = True
                     for col, (header, name, value) in enumerate(zip(headers[4:], names, texts[4:]), 5):
                         qty, status = parse_quantity(value)
