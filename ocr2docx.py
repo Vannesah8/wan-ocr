@@ -9,21 +9,31 @@ Engines
              messy scans and mixed layouts. Needs ANTHROPIC_API_KEY.
   tesseract  Free, offline, best for PRINTED text. Low-confidence words can be
              highlighted in yellow so you know what to proofread.
-  auto       (default) claude if ANTHROPIC_API_KEY is set, otherwise tesseract.
+   auto       (default) claude if ANTHROPIC_API_KEY is set, otherwise tesseract.
+
+Reliability
+   Claude calls retry transient failures with exponential backoff. In auto mode a page falls
+   back to Tesseract if Claude stays unavailable. Results are cached under ~/.cache/wan-ocr
+   (override with WAN_OCR_CACHE); --no-cache bypasses the cache and --offline forbids all API
+   calls. Offline mode forces Tesseract and cannot run --analyze.
 
 Examples
   python ocr2docx.py handwritten_notes.jpg
   python ocr2docx.py scanned_letter.pdf -o letter.docx
   python ocr2docx.py page1.png page2.png -o notes.docx --keep-image
   python ocr2docx.py printed.pdf --engine tesseract --highlight
-  python ocr2docx.py notes1.pdf notes2.pdf --analyze --focus "decisions and deadlines"
+   python ocr2docx.py notes1.pdf notes2.pdf --analyze --focus "decisions and deadlines"
+   python ocr2docx.py scanned.pdf --offline --highlight
 """
 import argparse
 import base64
+import hashlib
 import io
 import json
 import os
+import random
 import sys
+import time
 from datetime import date
 from pathlib import Path
 
@@ -35,6 +45,77 @@ from docx.shared import Inches, Pt
 from PIL import Image, ImageOps
 
 SUPPORTED = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp", ".pdf"}
+CACHE_DIR = Path(os.environ.get("WAN_OCR_CACHE", "~/.cache/wan-ocr")).expanduser()
+MAX_ATTEMPTS = 5
+RETRYABLE_STATUS = {408, 409, 429, 500, 502, 503, 504}
+
+
+class ClaudeUnavailable(RuntimeError):
+    """Raised when Claude cannot be reached or has refused the request."""
+
+
+def is_transient(exc):
+    if getattr(exc, "status_code", None) in RETRYABLE_STATUS:
+        return True
+    name = type(exc).__name__.lower()
+    return any(part in name for part in ("ratelimit", "timeout", "connection", "overloaded"))
+
+
+def retry_delay(exc, attempt):
+    headers = getattr(getattr(exc, "response", None), "headers", {}) or {}
+    header = headers.get("retry-after")
+    if header:
+        try:
+            return min(60.0, max(0.0, float(header)))
+        except ValueError:
+            pass
+    return min(30.0, 1.5 * 2 ** (attempt - 1)) + random.random()
+
+
+def call_claude(fn, what="Claude request"):
+    """Call the API with exponential backoff, then surface a clear CLI error."""
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            return fn()
+        except Exception as exc:
+            if not is_transient(exc) or attempt == MAX_ATTEMPTS:
+                raise ClaudeUnavailable(f"{what}: {exc}") from exc
+            delay = retry_delay(exc, attempt)
+            reason = getattr(exc, "status_code", type(exc).__name__)
+            print(f"  {what} hit {reason}; retrying in {delay:.1f}s "
+                  f"({attempt}/{MAX_ATTEMPTS - 1})", file=sys.stderr)
+            time.sleep(delay)
+
+
+def cache_key(kind, parts):
+    payload = json.dumps([kind, parts], sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def cache_get(kind, parts, enabled=True):
+    if not enabled:
+        return None, None
+    path = CACHE_DIR / f"{kind}-{cache_key(kind, parts)}.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), path
+    except (OSError, ValueError):
+        return None, path
+
+
+def cache_put(path, value):
+    if path is None:
+        return
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(value), encoding="utf-8")
+        tmp.replace(path)
+    except OSError as exc:
+        print(f"  Cache not written: {exc}", file=sys.stderr)
+
+
+def image_digest(img):
+    return hashlib.sha256(f"{img.mode}{img.size}".encode() + img.tobytes()).hexdigest()
 
 
 # --------------------------------------------------------------------------
@@ -118,10 +199,10 @@ def ocr_tesseract(img: Image.Image, lang: str, psm: int):
 def ocr_claude(img: Image.Image, model: str):
     try:
         import anthropic
-    except ImportError:
-        sys.exit("The 'claude' engine needs:  pip install anthropic")
+    except ImportError as exc:
+        raise ClaudeUnavailable("The 'claude' engine needs:  pip install anthropic") from exc
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        sys.exit("Set the ANTHROPIC_API_KEY environment variable to use the claude engine.")
+        raise ClaudeUnavailable("Set the ANTHROPIC_API_KEY environment variable to use the claude engine.")
 
     work = img.copy()
     work.thumbnail((2000, 2000))
@@ -169,10 +250,10 @@ def analyze_claude(pages, model: str, focus: str = ""):
     """pages: list of (label, text). Returns the analysis as a dict."""
     try:
         import anthropic
-    except ImportError:
-        sys.exit("Analysis needs:  pip install anthropic")
+    except ImportError as exc:
+        raise ClaudeUnavailable("Analysis needs:  pip install anthropic") from exc
     if not os.environ.get("ANTHROPIC_API_KEY"):
-        sys.exit("Set the ANTHROPIC_API_KEY environment variable to use --analyze.")
+        raise ClaudeUnavailable("Set the ANTHROPIC_API_KEY environment variable to use --analyze.")
     docs = "\n\n".join(f"=== {label} ===\n{text}" for label, text in pages if text.strip())
     if not docs:
         sys.exit("No text was found, so there is nothing to analyse.")
@@ -304,10 +385,18 @@ def main():
     ap.add_argument("--analyze", action="store_true",
                     help="also write a summary and analysis across all pages (needs ANTHROPIC_API_KEY)")
     ap.add_argument("--focus", default="", help="what the analysis should pay attention to")
+    ap.add_argument("--offline", action="store_true",
+                    help="never call the API: force Tesseract and skip analysis")
+    ap.add_argument("--no-cache", action="store_true", help="ignore and do not write cached results")
     args = ap.parse_args()
 
+    if args.offline and args.analyze:
+        sys.exit("--analyze needs Claude; remove it or run without --offline.")
     engine = args.engine
-    if engine == "auto":
+    if args.offline and engine in ("auto", "claude"):
+        engine = "tesseract"
+        print("Offline mode: using Tesseract.")
+    elif engine == "auto":
         engine = "claude" if os.environ.get("ANTHROPIC_API_KEY") else "tesseract"
         if engine == "tesseract":
             print("Note: ANTHROPIC_API_KEY not set, using Tesseract (weak on handwriting).")
@@ -329,9 +418,28 @@ def main():
     for label, img in pages:
         print(f"Reading {label} with {engine}...")
         if engine == "tesseract":
-            paragraphs = ocr_tesseract(img, args.lang, args.psm)
+            kind = "tesseract-ocr-v1"
+            key = {"image": image_digest(img), "lang": args.lang, "psm": args.psm}
         else:
-            paragraphs = ocr_claude(img, args.model)
+            kind = "claude-ocr-v1"
+            key = {"image": image_digest(img), "model": args.model}
+        paragraphs, path = cache_get(kind, key, not args.no_cache)
+        if paragraphs is not None:
+            print("  cache hit")
+        elif engine == "tesseract":
+            paragraphs = ocr_tesseract(img, args.lang, args.psm)
+            cache_put(path, paragraphs)
+        else:
+            try:
+                paragraphs = call_claude(lambda: ocr_claude(img, args.model), f"OCR of {label}")
+            except ClaudeUnavailable as exc:
+                if engine != "claude":
+                    print(f"  {exc}; falling back to Tesseract for {label}", file=sys.stderr)
+                    paragraphs = ocr_tesseract(img, args.lang, args.psm)
+                else:
+                    raise
+            else:
+                cache_put(path, paragraphs)
         n_words = sum(len(p) for p in paragraphs)
         print(f"  {len(paragraphs)} paragraph(s), {n_words} word(s)")
         results.append((label, img, paragraphs))
@@ -343,7 +451,18 @@ def main():
         print("Analysing all pages with Claude...")
         texts = [(label, "\n\n".join(" ".join(w for w, _ in para) for para in paras))
                  for label, _, paras in results]
-        analysis = analyze_claude(texts, args.model, args.focus)
+        key = {"model": args.model, "focus": args.focus, "pages": texts}
+        analysis, path = cache_get("analysis-v1", key, not args.no_cache)
+        if analysis is not None:
+            print("  cache hit")
+        else:
+            try:
+                analysis = call_claude(
+                    lambda: analyze_claude(texts, args.model, args.focus), "Analysis")
+            except ClaudeUnavailable as exc:
+                print(f"Analysis skipped: {exc}", file=sys.stderr)
+                return
+            cache_put(path, analysis)
         out2 = output.with_name(output.stem + "-analysis.docx")
         write_analysis_docx(analysis, out2, len(results), args.images[0].name)
         print(f"Saved {out2}")

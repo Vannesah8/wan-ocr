@@ -62,7 +62,27 @@ themes across the pages, people and organisations, dates and deadlines, figures,
 open questions and a short summary of each page. Claude uses only what the pages say, and every
 point names the page it came from. Needs `ANTHROPIC_API_KEY`.
 
-Options: `--lang eng+swa`, `--psm 6`, `--dpi 300`, `--highlight`, `--threshold 60`, `--keep-image`, `--model`, `--analyze`, `--focus`.
+Options: `--lang eng+swa`, `--psm 6`, `--dpi 300`, `--highlight`, `--threshold 60`, `--keep-image`, `--model`, `--analyze`, `--focus`, `--offline`, `--no-cache`.
+
+#### Reliability, caching and offline use
+
+Claude calls retry rate limits (429) and transient network/server errors up to five times with
+exponential backoff, honouring `Retry-After` when supplied. In `auto` mode, a page that still fails
+is converted with Tesseract instead of aborting the batch; with `--engine claude` the run stops with
+a clear message. If analysis fails, the transcription is still saved and only the analysis is skipped.
+
+OCR and analysis results are cached as text (not images) in `~/.cache/wan-ocr`, keyed by page content,
+engine/model and options, so reruns do not spend API calls again. Set `WAN_OCR_CACHE` to use another
+directory, or pass `--no-cache` to bypass it.
+
+For a guaranteed offline run:
+
+```bash
+python ocr2docx.py printed.pdf --offline --highlight
+```
+
+`--offline` forces Tesseract even when a key is set, and refuses `--analyze`. Leaving
+`ANTHROPIC_API_KEY` unset has the same effect through `auto`.
 
 ### 2. Web page (`handwriting-to-word.html`)
 
